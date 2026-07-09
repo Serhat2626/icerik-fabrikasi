@@ -1,0 +1,6 @@
+-- İçerik Fabrikası — V1 İlk Şema
+-- Bu dosya şu an yer tutucu (placeholder) olarak oluşturulmuştur.
+-- İş domain tabloları sonraki fazlarda (PH1+) eklenecektir.
+--
+-- Oluşturma tarihi: 2026-07-10
+-- Faz: PH0-002
