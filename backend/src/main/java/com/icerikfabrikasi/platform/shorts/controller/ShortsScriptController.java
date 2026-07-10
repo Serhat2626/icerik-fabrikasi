@@ -12,6 +12,7 @@ import com.icerikfabrikasi.platform.shorts.render.ShortsRenderResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -59,6 +60,7 @@ public class ShortsScriptController {
 
     @GetMapping
     @Operation(summary = "Shorts script'lerini listele")
+    @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<List<ShortsScriptResponse>>> listScripts(
             @RequestParam UUID channelId,
             @RequestParam(required = false) ShortsScriptStatus status) {
@@ -75,6 +77,7 @@ public class ShortsScriptController {
 
     @GetMapping("/{scriptId}")
     @Operation(summary = "Shorts script detayını getir")
+    @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<ShortsScriptResponse>> getScript(@PathVariable UUID scriptId) {
         ShortsScript script = shortsScriptService.getScript(scriptId);
         return ResponseEntity.ok(ApiResponse.success(ShortsScriptResponse.from(script)));
