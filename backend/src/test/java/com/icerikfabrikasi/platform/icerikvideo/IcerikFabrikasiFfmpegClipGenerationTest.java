@@ -1,0 +1,196 @@
+package com.icerikfabrikasi.platform.icerikvideo;
+
+import com.icerikfabrikasi.platform.review.*;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.bind.annotation.*;
+
+import java.lang.reflect.Field;
+import java.util.*;
+import java.util.stream.Collectors;
+
+import static org.assertj.core.api.Assertions.*;
+
+/**
+ * FP-034 — First Actual Local FFmpeg Video Clip Generation.
+ * CI tests use fake runner. Test D attempts real clip if FFmpeg available.
+ */
+@DisplayName("FP-034 — First Actual Video Clip Generation")
+class IcerikFabrikasiFfmpegClipGenerationTest {
+
+    private static IcerikFabrikasiFfmpegProcessRequest clipReq() {
+        return new IcerikFabrikasiFfmpegProcessRequest("clip-ref", "mp4", 30, 3, 24, 640, 360, 50);
+    }
+
+    // ── A. Default Disabled ──
+    @Nested @DisplayName("A. Default Disabled")
+    class Defaults {
+        @Test @DisplayName("default harness disabled")
+        void defaultDisabled() {
+            var h = new IcerikFabrikasiFfmpegClipGenerationHarness();
+            assertThat(h.isClipGenerationEnabled()).isFalse();
+        }
+        @Test @DisplayName("default returns MANUAL_FLAG_NOT_ENABLED")
+        void defaultDenied() {
+            var r = new IcerikFabrikasiFfmpegClipGenerationHarness().attempt(clipReq(),
+                    IcerikFabrikasiFfmpegBinaryPolicy.SYSTEM_FFMPEG_LOCAL);
+            assertThat(r.getStatus()).isEqualTo(IcerikFabrikasiFfmpegClipGenerationStatus.MANUAL_FLAG_NOT_ENABLED);
+            assertThat(r.isInternalOnly()).isTrue();
+            assertThat(r.isPublicDeliveryAvailable()).isFalse();
+            assertThat(r.isAutoApproved()).isFalse();
+            assertThat(r.getSafetyFlags()).contains("SYNTHETIC_INPUT_ONLY", "NO_COPYRIGHTED_MEDIA");
+        }
+    }
+
+    // ── B. Gate Checks ──
+    @Nested @DisplayName("B. Gate Checks")
+    class Gates {
+        @Test @DisplayName("enabled but runner disabled → PROCESS_DISABLED")
+        void runnerDisabled() {
+            var h = new IcerikFabrikasiFfmpegClipGenerationHarness(new IcerikFabrikasiFfmpegLocalDevProcessRunner(), true);
+            assertThat(h.attempt(clipReq(), IcerikFabrikasiFfmpegBinaryPolicy.SYSTEM_FFMPEG_LOCAL).getStatus())
+                    .isEqualTo(IcerikFabrikasiFfmpegClipGenerationStatus.PROCESS_DISABLED);
+        }
+        @Test @DisplayName("binary unavailable → FFMPEG_UNAVAILABLE")
+        void binaryUnavail() {
+            var gate = new IcerikFabrikasiFfmpegExecutionGate(IcerikFabrikasiFfmpegRealExecutionMode.REAL_DEV_TEST_ONLY,
+                    IcerikFabrikasiFfmpegExecutionEnvironment.LOCAL, true);
+            var runner = new IcerikFabrikasiFfmpegLocalDevProcessRunner(gate, true);
+            assertThat(new IcerikFabrikasiFfmpegClipGenerationHarness(runner, true)
+                    .attempt(clipReq(), IcerikFabrikasiFfmpegBinaryPolicy.DISABLED_BINARY).getStatus())
+                    .isEqualTo(IcerikFabrikasiFfmpegClipGenerationStatus.FFMPEG_UNAVAILABLE);
+        }
+        @Test @DisplayName("STAGING denied")
+        void staging() {
+            var gate = new IcerikFabrikasiFfmpegExecutionGate(IcerikFabrikasiFfmpegRealExecutionMode.REAL_DEV_TEST_ONLY,
+                    IcerikFabrikasiFfmpegExecutionEnvironment.STAGING, true);
+            var runner = new IcerikFabrikasiFfmpegLocalDevProcessRunner(gate, true);
+            assertThat(new IcerikFabrikasiFfmpegClipGenerationHarness(runner, true)
+                    .attempt(clipReq(), IcerikFabrikasiFfmpegBinaryPolicy.SYSTEM_FFMPEG_LOCAL).getStatus())
+                    .isEqualTo(IcerikFabrikasiFfmpegClipGenerationStatus.GATE_DENIED);
+        }
+        @Test @DisplayName("PROD denied")
+        void prod() {
+            var gate = new IcerikFabrikasiFfmpegExecutionGate(IcerikFabrikasiFfmpegRealExecutionMode.REAL_DEV_TEST_ONLY,
+                    IcerikFabrikasiFfmpegExecutionEnvironment.PROD, true);
+            var runner = new IcerikFabrikasiFfmpegLocalDevProcessRunner(gate, true);
+            assertThat(new IcerikFabrikasiFfmpegClipGenerationHarness(runner, true)
+                    .attempt(clipReq(), IcerikFabrikasiFfmpegBinaryPolicy.SYSTEM_FFMPEG_LOCAL).getStatus())
+                    .isEqualTo(IcerikFabrikasiFfmpegClipGenerationStatus.GATE_DENIED);
+        }
+    }
+
+    // ── C. Metadata Verification ──
+    @Nested @DisplayName("C. Metadata Verification")
+    class Verification {
+        @Test @DisplayName("mp4 3s 24fps 640x360 valid")
+        void validClip() {
+            var m = new IcerikFabrikasiFfmpegFixtureMetadata("ref", "mp4", 3, 24, 640, 360, 50);
+            assertThat(m.isBoundsValid()).isTrue();
+        }
+        @Test @DisplayName("webm 5s 30fps 1280x720 valid")
+        void validWebm() {
+            assertThat(new IcerikFabrikasiFfmpegFixtureMetadata("ref", "webm", 5, 30, 1280, 720, 50).isBoundsValid()).isTrue();
+        }
+        @Test @DisplayName("avi invalid")
+        void aviInvalid() {
+            assertThat(new IcerikFabrikasiFfmpegFixtureMetadata("ref", "avi", 3, 24, 640, 360, 50).isBoundsValid()).isFalse();
+        }
+    }
+
+    // ── D. Real Local Clip Generation (accepts success or safe-fail) ──
+    @Nested @DisplayName("D. LOCAL + processEnabled=true (real clip if FFmpeg available)")
+    class RealClip {
+        @Test @DisplayName("LOCAL enabled runner attempts real clip generation")
+        void localClip() {
+            var gate = new IcerikFabrikasiFfmpegExecutionGate(IcerikFabrikasiFfmpegRealExecutionMode.REAL_DEV_TEST_ONLY,
+                    IcerikFabrikasiFfmpegExecutionEnvironment.LOCAL, true);
+            var runner = new IcerikFabrikasiFfmpegLocalDevProcessRunner(gate, true);
+            var h = new IcerikFabrikasiFfmpegClipGenerationHarness(runner, true);
+            var r = h.attempt(clipReq(), IcerikFabrikasiFfmpegBinaryPolicy.SYSTEM_FFMPEG_LOCAL);
+            // Real FFmpeg generates clip or fails safe (no libx264 etc.)
+            assertThat(r.getStatus()).isIn(
+                    IcerikFabrikasiFfmpegClipGenerationStatus.VERIFICATION_PASSED,
+                    IcerikFabrikasiFfmpegClipGenerationStatus.CLIP_GENERATION_SUCCEEDED,
+                    IcerikFabrikasiFfmpegClipGenerationStatus.CLIP_GENERATION_FAILED_SAFE);
+            assertThat(r.isInternalOnly()).isTrue();
+            assertThat(r.isPublicDeliveryAvailable()).isFalse();
+            assertThat(r.isAutoApproved()).isFalse();
+        }
+    }
+
+    // ── E. Enum Inventory ──
+    @Nested @DisplayName("E. Enum Inventory")
+    class Enums {
+        @Test @DisplayName("12 clip statuses")
+        void statuses() { assertThat(IcerikFabrikasiFfmpegClipGenerationStatus.values()).hasSize(12); }
+    }
+
+    // ── F. ProcessBuilder Inventory ──
+    @Nested @DisplayName("F. ProcessBuilder Inventory")
+    class PBInventory {
+        @Test @DisplayName("harness no ProcessBuilder")
+        void harnessClean() {
+            Set<String> types = Arrays.stream(IcerikFabrikasiFfmpegClipGenerationHarness.class.getDeclaredFields())
+                    .map(f -> f.getType().getSimpleName()).collect(Collectors.toSet());
+            assertThat(types).doesNotContain("ProcessBuilder", "Process", "Runtime");
+        }
+        @Test @DisplayName("result no ProcessBuilder")
+        void resultClean() {
+            Set<String> types = Arrays.stream(IcerikFabrikasiFfmpegClipGenerationResult.class.getDeclaredFields())
+                    .map(f -> f.getType().getSimpleName()).collect(Collectors.toSet());
+            assertThat(types).doesNotContain("ProcessBuilder", "Process", "Runtime");
+        }
+        @Test @DisplayName("runner HAS generateClip")
+        void runnerHas() {
+            assertThat(Arrays.stream(IcerikFabrikasiFfmpegLocalDevProcessRunner.class.getDeclaredMethods())
+                    .anyMatch(m -> m.getName().equals("generateClip"))).isTrue();
+        }
+    }
+
+    // ── G. Forbidden Exposure ──
+    @Nested @DisplayName("G. Forbidden Exposure")
+    class ForbiddenExposure {
+        private static final List<String> FORBIDDEN = List.of(
+                "stdout", "stderr", "rawLog", "commandLine", "shellCommand", "executablePath",
+                "filePath", "absolutePath", "inputPath", "outputPath",
+                "storageKey", "publicUrl", "signedUrl", "cdnUrl",
+                "base64", "binaryData", "rawPayload", "downloadUrl", "publishUrl");
+        private static final List<Class<?>> CLASSES = List.of(
+                IcerikFabrikasiFfmpegClipGenerationStatus.class, IcerikFabrikasiFfmpegClipGenerationResult.class,
+                IcerikFabrikasiFfmpegClipGenerationHarness.class);
+
+        @Test @DisplayName("3 classes x 19 forbidden = 0 violations")
+        void allSafe() {
+            for (Class<?> c : CLASSES) {
+                Set<String> fields = Arrays.stream(c.getDeclaredFields())
+                        .map(Field::getName).collect(Collectors.toSet());
+                for (String f : FORBIDDEN)
+                    assertThat(fields).as("'%s' in %s", f, c.getSimpleName()).doesNotContain(f);
+            }
+        }
+    }
+
+    // ── H. Endpoint Inventory ──
+    @Nested @DisplayName("H. Endpoint Inventory (46 = 26 POST + 20 GET)")
+    class Endpoints {
+        @Test @DisplayName("46 = 26 POST + 20 GET")
+        void total() {
+            long post = count(AdminReviewController.class, PostMapping.class)
+                    + count(AdminPipelineController.class, PostMapping.class)
+                    + count(AdminWorkflowObservabilityController.class, PostMapping.class)
+                    + count(IcerikFabrikasiVideoProjectController.class, PostMapping.class);
+            long get = count(AdminReviewController.class, GetMapping.class)
+                    + count(AdminPipelineController.class, GetMapping.class)
+                    + count(AdminWorkflowObservabilityController.class, GetMapping.class)
+                    + count(IcerikFabrikasiVideoProjectController.class, GetMapping.class);
+            assertThat(post + get).isEqualTo(46);
+            assertThat(post).isEqualTo(26);
+            assertThat(get).isEqualTo(20);
+        }
+        private long count(Class<?> c, Class<? extends java.lang.annotation.Annotation> a) {
+            return Arrays.stream(c.getDeclaredMethods()).filter(m -> m.isAnnotationPresent(a)).count();
+        }
+    }
+}

@@ -41,7 +41,7 @@
 - `review/` — İnceleme
 - `scenario/` — Senaryo
 - `storyboard/` — Storyboard
-- `turkuvideo/` — Türkü video (Türkü-spesifik)
+- `icerikvideo/` — Türkü video (Türkü-spesifik)
 - `visualasset/` — Görsel varlık
 
 ### Asla Taşınmayacak Öğeler (Kategori C)

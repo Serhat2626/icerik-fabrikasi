@@ -1,0 +1,21 @@
+package com.icerikfabrikasi.platform.icerikvideo;
+
+/**
+ * FP-025 Task 02: Safe transition/lifecycle reason codes.
+ */
+public enum IcerikFabrikasiInternalRenderJobReasonCode {
+    TRANSITION_ALLOWED,
+    UNKNOWN_CURRENT_STATE,
+    UNKNOWN_ACTION,
+    TRANSITION_NOT_ALLOWED,
+    TERMINAL_STATE,
+    PUBLIC_DELIVERY_FORBIDDEN,
+    GENERIC_STATUS_UPDATE_FORBIDDEN,
+    JOB_REF_INVALID,
+    RENDER_EXECUTION_DISABLED,
+    UNSAFE_INPUT_REJECTED,
+    ARTIFACT_REF_INVALID,
+    PROGRESS_OUT_OF_BOUNDS,
+    PROVIDER_PAYLOAD_FORBIDDEN,
+    FILESYSTEM_EXPOSURE_FORBIDDEN
+}

@@ -56,7 +56,7 @@ class KnowledgeItemServiceTest {
         readyItem = KnowledgeItem.builder()
                 .id(UUID.randomUUID())
                 .title("Çanakkale Türküsü")
-                .slug("canakkale-turkusu")
+                .slug("canakkale-icerikFabrikasisu")
                 .type(KnowledgeItemType.FOLK_SONG)
                 .status(KnowledgeItemStatus.READY)
                 .language("tr")

@@ -1,0 +1,549 @@
+package com.icerikfabrikasi.platform.icerikvideo;
+
+import com.icerikfabrikasi.platform.review.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.*;
+import java.util.stream.Collectors;
+
+import static org.assertj.core.api.Assertions.*;
+
+/**
+ * FP-023 Task 06: E2E Render Adapter Safety Regression + Final Closure.
+ */
+@DisplayName("FP-023 Task 06 — E2E Render Adapter Safety Regression")
+class FP023FinalClosureRegressionTest {
+
+    private IcerikFabrikasiVideoProjectRepository repository;
+    private StubIcerikFabrikasiRenderRunnerGateway stubRunner;
+    private FfmpegIcerikFabrikasiRenderRunnerGateway ffmpegDisabled;
+    private FfmpegIcerikFabrikasiRenderRunnerGateway ffmpegSandbox;
+    private IcerikFabrikasiRenderRunnerResolver defaultResolver;
+    private IcerikFabrikasiRenderArtifactService artifactService;
+
+    @BeforeEach
+    void setUp() {
+        repository = new InMemoryIcerikFabrikasiVideoProjectRepository();
+        stubRunner = new StubIcerikFabrikasiRenderRunnerGateway();
+        ffmpegDisabled = new FfmpegIcerikFabrikasiRenderRunnerGateway();
+        ffmpegSandbox = new FfmpegIcerikFabrikasiRenderRunnerGateway(true);
+        defaultResolver = new IcerikFabrikasiRenderRunnerResolver(stubRunner);
+        artifactService = new IcerikFabrikasiRenderArtifactService();
+    }
+
+    private IcerikFabrikasiRenderExecutionPlan validPlan() {
+        return new IcerikFabrikasiRenderExecutionPlan(
+                UUID.randomUUID(), 5, 120.0, "1920x1080", 30, "mp4",
+                60.0, "deterministic-stub", "DETERMINISTIC_STUB");
+    }
+
+    // ── A. Endpoint Inventory ──
+
+    @Nested
+    @DisplayName("A. Endpoint Inventory (46 = 26 POST + 20 GET)")
+    class EndpointInventory {
+
+        @Test
+        @DisplayName("total 46 = 26 POST + 20 GET")
+        void totalEndpoints() {
+            long post = countMethods(AdminReviewController.class, PostMapping.class)
+                    + countMethods(AdminPipelineController.class, PostMapping.class)
+                    + countMethods(AdminWorkflowObservabilityController.class, PostMapping.class)
+                    + countMethods(IcerikFabrikasiVideoProjectController.class, PostMapping.class);
+            long get = countMethods(AdminReviewController.class, GetMapping.class)
+                    + countMethods(AdminPipelineController.class, GetMapping.class)
+                    + countMethods(AdminWorkflowObservabilityController.class, GetMapping.class)
+                    + countMethods(IcerikFabrikasiVideoProjectController.class, GetMapping.class);
+            assertThat(post).as("total POST").isEqualTo(26);
+            assertThat(get).as("total GET").isEqualTo(20);
+            assertThat(post + get).as("total endpoints").isEqualTo(46);
+        }
+
+        @Test
+        @DisplayName("IcerikFabrikasiVideoProjectController: 17 POST + 8 GET = 25")
+        void icerikFabrikasiController() {
+            long post = countMethods(IcerikFabrikasiVideoProjectController.class, PostMapping.class);
+            long get = countMethods(IcerikFabrikasiVideoProjectController.class, GetMapping.class);
+            assertThat(post).as("türkü POST").isEqualTo(17);
+            assertThat(get).as("türkü GET").isEqualTo(8);
+        }
+
+        @Test
+        @DisplayName("no PUT/DELETE endpoints")
+        void noUnsafe() {
+            assertThat(countMethods(IcerikFabrikasiVideoProjectController.class, PutMapping.class)).isEqualTo(0);
+            assertThat(countMethods(IcerikFabrikasiVideoProjectController.class, DeleteMapping.class)).isEqualTo(0);
+            assertThat(countMethods(AdminReviewController.class, PutMapping.class)).isEqualTo(0);
+            assertThat(countMethods(AdminReviewController.class, DeleteMapping.class)).isEqualTo(0);
+        }
+
+        private long countMethods(Class<?> c, Class<? extends java.lang.annotation.Annotation> ann) {
+            return Arrays.stream(c.getDeclaredMethods())
+                    .filter(m -> m.isAnnotationPresent(ann)).count();
+        }
+    }
+
+    // ── B. Full E2E Pipeline ──
+
+    @Nested
+    @DisplayName("B. Full E2E Pipeline — Stub Runner")
+    class FullE2E {
+
+        @Test
+        @DisplayName("complete bootstrap-to-render pipeline with stub")
+        void fullPipeline() {
+            var bootstrapService = new IcerikFabrikasiVideoProjectBootstrapService(repository);
+            var planningService = new IcerikFabrikasiVideoPlanningService(repository);
+            var assetService = new IcerikFabrikasiVideoAssetPlanningService(repository);
+            var gateway = new StubIcerikFabrikasiGenerationProviderGateway();
+            var sanitizerP = new IcerikFabrikasiProviderSafetySanitizer();
+            var policyP = new IcerikFabrikasiProviderSafetyPolicy();
+            var draftService = new IcerikFabrikasiProviderDraftPlanningService(repository, gateway, sanitizerP, policyP);
+            var imageBatchService = new IcerikFabrikasiProviderImageBatchService(repository, gateway, sanitizerP, policyP);
+            var compositionService = new IcerikFabrikasiVideoCompositionService(repository);
+            var renderManifestService = new IcerikFabrikasiRenderManifestService(repository);
+            var renderJobService = new IcerikFabrikasiRenderJobService(repository, renderManifestService);
+            var executionService = new IcerikFabrikasiRenderExecutionService(repository, stubRunner);
+            var actorResolver = new AdminActorResolver();
+            var controller = new IcerikFabrikasiVideoProjectController(
+                    bootstrapService, planningService, assetService,
+                    draftService, imageBatchService, compositionService,
+                    renderManifestService, renderJobService, executionService, new IcerikFabrikasiStoryboardInternalRenderChainHarness(), actorResolver);
+
+            IcerikFabrikasiVideoBootstrapRequest req = new IcerikFabrikasiVideoBootstrapRequest();
+            req.setIcerikFabrikasiName("Çanakkale Türküsü");
+            req.setRegion("Çanakkale");
+            req.setMood("Kahramanlık");
+            var project = bootstrapService.bootstrap(req, "test-admin");
+            UUID id = project.getId();
+
+            controller.prepareStory(id, null, null, null);
+            controller.prepareScenario(id, null, null, null);
+            controller.prepareStoryboard(id, null, null, null);
+            controller.prepareSceneAssets(id, null, null, null);
+            controller.prepareImageBatch(id, null, null, null);
+            controller.completeImageBatch(id, null, null, null);
+            controller.prepareCompositionPlan(id, null, null, null);
+            controller.prepareRenderManifest(id, null, null, null);
+            controller.prepareRenderJob(id, null, null, null);
+            controller.runRenderJob(id, null, null, null);
+
+            var p = bootstrapService.getById(id);
+            assertThat(p.getWorkflowStage())
+                    .isEqualTo(IcerikFabrikasiVideoWorkflowStage.RENDER_JOB_COMPLETED_INTERNAL);
+        }
+
+        @Test
+        @DisplayName("artifact created from stub E2E result")
+        void artifactFromStub() {
+            var result = stubRunner.execute(validPlan());
+            var artifact = artifactService.createFromExecutionResult(result, IcerikFabrikasiRenderAdapterMode.STUB);
+            assertThat(artifact).isNotNull();
+            assertThat(artifact.getStatus()).isEqualTo(IcerikFabrikasiRenderArtifactStatus.VALIDATED);
+            assertThat(artifact.getReference().getOpaqueRef()).startsWith("internal-stub-artifact:");
+            assertThat(artifact.getSafetyReport().isHumanReviewRequired()).isTrue();
+            assertThat(artifact.getSafetyReport().isAutoApproved()).isFalse();
+        }
+
+        @Test
+        @DisplayName("artifact created from sandbox E2E result")
+        void artifactFromSandbox() {
+            var result = ffmpegSandbox.execute(validPlan());
+            var artifact = artifactService.createFromExecutionResult(result, IcerikFabrikasiRenderAdapterMode.FFMPEG_READY);
+            assertThat(artifact).isNotNull();
+            assertThat(artifact.getReference().getOpaqueRef()).startsWith("internal-ffmpeg-sandbox:");
+            assertThat(artifact.getReference().getRendererMode()).isEqualTo(IcerikFabrikasiRenderAdapterMode.FFMPEG_READY);
+        }
+
+        @Test
+        @DisplayName("cleanup plan from artifact is metadata-only")
+        void cleanupMetadataOnly() {
+            var result = stubRunner.execute(validPlan());
+            var artifact = artifactService.createFromExecutionResult(result, IcerikFabrikasiRenderAdapterMode.STUB);
+            var plan = artifactService.createCleanupPlan(artifact);
+            assertThat(plan).isNotNull();
+            assertThat(plan.isEligible()).isTrue();
+            assertThat(plan.getRetentionPolicy().getRetentionHours()).isEqualTo(24);
+        }
+    }
+
+    // ── C. Render Adapter Contract ──
+
+    @Nested
+    @DisplayName("C. Render Adapter Contract")
+    class AdapterContract {
+
+        @Test
+        @DisplayName("stub remains default runner")
+        void stubDefault() {
+            assertThat(defaultResolver.getActiveMode()).isEqualTo(IcerikFabrikasiRenderAdapterMode.STUB);
+            assertThat(defaultResolver.isStubActive()).isTrue();
+            assertThat(defaultResolver.isFfmpegActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("FFmpeg disabled by default")
+        void ffmpegDisabledDefault() {
+            assertThat(ffmpegDisabled.isEnabled()).isFalse();
+            assertThat(ffmpegDisabled.getAdapterMode()).isEqualTo(IcerikFabrikasiRenderAdapterMode.FFMPEG_DISABLED);
+        }
+
+        @Test
+        @DisplayName("disabled FFmpeg returns safe failure")
+        void disabledFailure() {
+            var result = ffmpegDisabled.execute(validPlan());
+            assertThat(result.isSuccess()).isFalse();
+            assertThat(result.getFailureCode()).isEqualTo(IcerikFabrikasiRenderFailureCode.RENDERER_UNAVAILABLE);
+            assertThat(result.getArtifact()).isNull();
+        }
+
+        @Test
+        @DisplayName("sandbox FFmpeg builds plan but does not execute")
+        void sandboxNoExecution() {
+            var plan = ffmpegSandbox.buildCommandPlanOnly(validPlan());
+            assertThat(plan.isValidated()).isTrue();
+            assertThat(plan.getExecutableToken()).isEqualTo("ffmpeg");
+            // Sandbox execution returns opaque artifact, not real file
+            var result = ffmpegSandbox.execute(validPlan());
+            assertThat(result.isSuccess()).isTrue();
+            assertThat(result.getArtifact().getArtifactRef()).startsWith("internal-ffmpeg-sandbox:");
+        }
+
+        @Test
+        @DisplayName("both runners implement same interface")
+        void sameInterface() {
+            assertThat(stubRunner).isInstanceOf(IcerikFabrikasiRenderRunnerGateway.class);
+            assertThat(ffmpegDisabled).isInstanceOf(IcerikFabrikasiRenderRunnerGateway.class);
+            assertThat(ffmpegSandbox).isInstanceOf(IcerikFabrikasiRenderRunnerGateway.class);
+        }
+
+        @Test
+        @DisplayName("adapter mode enum has 5 values")
+        void adapterModeValues() {
+            assertThat(IcerikFabrikasiRenderAdapterMode.values()).hasSize(5);
+            var names = Arrays.stream(IcerikFabrikasiRenderAdapterMode.values())
+                    .map(Enum::name).collect(Collectors.toSet());
+            assertThat(names).contains("STUB", "FFMPEG_DISABLED", "FFMPEG_CONFIG_MISSING",
+                    "FFMPEG_READY", "FFMPEG_FAILED_SAFE");
+        }
+
+        @Test
+        @DisplayName("adapter failure code enum has 8 values")
+        void failureCodeValues() {
+            assertThat(IcerikFabrikasiRenderAdapterFailureCode.values()).hasSize(8);
+        }
+    }
+
+    // ── D. Secure Command Builder ──
+
+    @Nested
+    @DisplayName("D. Secure Command Builder")
+    class CommandBuilder {
+
+        @Test
+        @DisplayName("rejects oversized resolution")
+        void rejectsOversize() {
+            var badPlan = new IcerikFabrikasiRenderExecutionPlan(
+                    UUID.randomUUID(), 5, 120.0, "7680x4320", 30, "mp4",
+                    60.0, "stub", "STUB");
+            var cmd = ffmpegSandbox.buildCommandPlanOnly(badPlan);
+            assertThat(cmd.isValidated()).isFalse();
+        }
+
+        @Test
+        @DisplayName("rejects shell metacharacters in format")
+        void rejectsShell() {
+            var badPlan = new IcerikFabrikasiRenderExecutionPlan(
+                    UUID.randomUUID(), 5, 120.0, "1920x1080", 30, "mp4;rm -rf /",
+                    60.0, "stub", "STUB");
+            var cmd = ffmpegSandbox.buildCommandPlanOnly(badPlan);
+            assertThat(cmd.isValidated()).isFalse();
+        }
+
+        @Test
+        @DisplayName("valid plan produces validated command plan")
+        void validPlanProducesValidated() {
+            var plan = new IcerikFabrikasiRenderExecutionPlan(
+                    UUID.randomUUID(), 5, 120.0, "1920x1080", 30, "mp4",
+                    60.0, "deterministic-stub", "DETERMINISTIC_STUB");
+            var cmd = ffmpegSandbox.buildCommandPlanOnly(plan);
+            assertThat(cmd.isValidated()).isTrue();
+            assertThat(cmd.getSafeArgs()).doesNotContain(";", "&&", "||", "$(", "`");
+        }
+    }
+
+    // ── E. Artifact Metadata Safety ──
+
+    @Nested
+    @DisplayName("E. Artifact Metadata Safety")
+    class ArtifactSafety {
+
+        @Test
+        @DisplayName("artifact status enum has no forbidden values")
+        void noForbiddenStatuses() {
+            var names = Arrays.stream(IcerikFabrikasiRenderArtifactStatus.values())
+                    .map(Enum::name).collect(Collectors.toSet());
+            assertThat(names).doesNotContain("PUBLISHED", "EXPORTED", "DOWNLOADED",
+                    "PUBLIC_READY", "AUTO_APPROVED", "COMPLETED_AS_PUBLIC_VIDEO");
+        }
+
+        @Test
+        @DisplayName("safety report always has correct flags")
+        void safetyReportFlags() {
+            var result = stubRunner.execute(validPlan());
+            var artifact = artifactService.createFromExecutionResult(result, IcerikFabrikasiRenderAdapterMode.STUB);
+            var report = artifact.getSafetyReport();
+            assertThat(report.isHumanReviewRequired()).isTrue();
+            assertThat(report.isCopyrightReviewRequired()).isTrue();
+            assertThat(report.isAutoApproved()).isFalse();
+            assertThat(report.isNotPublishReady()).isTrue();
+            assertThat(report.isNotExportReady()).isTrue();
+        }
+
+        @Test
+        @DisplayName("unsafe artifact refs rejected")
+        void unsafeRefsRejected() {
+            List<String> unsafe = List.of(
+                    "https://cdn.example.com/video.mp4", "C:\\Users\\video.mp4",
+                    "/usr/local/render.mp4", "s3://bucket/key",
+                    "storageKey=abc", "base64:data", "Bearer token",
+                    "password=secret", "$(rm -rf /)", "ref && cat /etc/passwd");
+            for (String ref : unsafe) {
+                assertThat(artifactService.isValidOpaqueRef(ref))
+                        .as("should reject: %s", ref).isFalse();
+            }
+        }
+
+        @Test
+        @DisplayName("retention policy bounded")
+        void retentionBounded() {
+            var low = new IcerikFabrikasiRenderArtifactRetentionPolicy(-100, false, "test");
+            assertThat(low.getRetentionHours()).isEqualTo(1);
+            var high = new IcerikFabrikasiRenderArtifactRetentionPolicy(99999, false, "test");
+            assertThat(high.getRetentionHours()).isEqualTo(168);
+        }
+    }
+
+    // ── F. No Process Execution ──
+
+    @Nested
+    @DisplayName("F. No Process Execution")
+    class NoProcessExecution {
+
+        private static final Set<String> PROCESS_FIELDS = Set.of(
+                "processBuilder", "process", "runtime", "processHandle", "exec", "command");
+
+        @Test
+        @DisplayName("FfmpegIcerikFabrikasiRenderRunnerGateway has no process fields")
+        void ffmpegNoProcess() {
+            assertNoProcessFields(FfmpegIcerikFabrikasiRenderRunnerGateway.class);
+        }
+
+        @Test
+        @DisplayName("IcerikFabrikasiRenderRunnerResolver has no process fields")
+        void resolverNoProcess() {
+            assertNoProcessFields(IcerikFabrikasiRenderRunnerResolver.class);
+        }
+
+        @Test
+        @DisplayName("IcerikFabrikasiFfmpegCommandBuilder has no process fields")
+        void builderNoProcess() {
+            assertNoProcessFields(IcerikFabrikasiFfmpegCommandBuilder.class);
+        }
+
+        @Test
+        @DisplayName("IcerikFabrikasiRenderArtifactService has no process fields")
+        void artifactServiceNoProcess() {
+            assertNoProcessFields(IcerikFabrikasiRenderArtifactService.class);
+        }
+
+        private void assertNoProcessFields(Class<?> clazz) {
+            var fields = Arrays.stream(clazz.getDeclaredFields())
+                    .map(Field::getName).collect(Collectors.toSet());
+            for (String f : PROCESS_FIELDS) {
+                assertThat(fields).as("%s in %s", f, clazz.getSimpleName()).doesNotContain(f);
+            }
+        }
+    }
+
+    // ── G. Forbidden State Regression ──
+
+    @Nested
+    @DisplayName("G. Forbidden State Regression")
+    class ForbiddenStates {
+
+        @Test
+        @DisplayName("workflow stages exclude forbidden states")
+        void noForbiddenStages() {
+            var stages = Arrays.stream(IcerikFabrikasiVideoWorkflowStage.values())
+                    .map(Enum::name).collect(Collectors.toSet());
+            assertThat(stages).doesNotContain(
+                    "PUBLISHED", "EXPORTED", "PUBLICLY_DELIVERED",
+                    "AUTO_APPROVED", "COMPLETED_AS_PUBLIC_VIDEO");
+        }
+
+        @Test
+        @DisplayName("workflow stage count")
+        void stageCount() {
+            assertThat(IcerikFabrikasiVideoWorkflowStage.values()).hasSizeGreaterThanOrEqualTo(14);
+        }
+    }
+
+    // ── H. DTO Safety Regression ──
+
+    @Nested
+    @DisplayName("H. DTO Safety Regression — All FP-023 Classes")
+    class DtoSafety {
+
+        private static final List<String> FORBIDDEN = List.of(
+                "rawPayload", "rawRendererPayload", "rawProviderPayload",
+                "token", "jwt", "session", "principal", "authorizationHeader",
+                "credential", "password", "secret", "apiKey",
+                "publicUrl", "signedUrl", "cdnUrl", "exportUrl", "publishUrl",
+                "downloadUrl", "storageKey", "base64", "binaryData",
+                "renderedVideo", "videoFile", "downloadFile",
+                "filePath", "renderedVideoUrl", "commandLine", "ffmpegCommand",
+                "shellCommand", "absolutePath", "processBuilder");
+
+        private static final List<Class<?>> CLASSES = List.of(
+                FfmpegIcerikFabrikasiRenderRunnerGateway.class,
+                IcerikFabrikasiRenderRunnerResolver.class,
+                IcerikFabrikasiRenderAdapterMode.class,
+                IcerikFabrikasiRenderAdapterFailureCode.class,
+                IcerikFabrikasiRenderAdapterPolicy.class,
+                IcerikFabrikasiRenderAdapterSanitizer.class,
+                IcerikFabrikasiRenderAdapterResult.class,
+                IcerikFabrikasiRenderAdapterTraceReference.class,
+                IcerikFabrikasiRenderAdapterSafetyEnvelope.class,
+                IcerikFabrikasiFfmpegCommandBuilder.class,
+                IcerikFabrikasiFfmpegCommandPlan.class,
+                IcerikFabrikasiFfmpegExecutionLimits.class,
+                IcerikFabrikasiInternalRenderArtifact.class,
+                IcerikFabrikasiRenderArtifactReference.class,
+                IcerikFabrikasiRenderArtifactSafetyReport.class,
+                IcerikFabrikasiRenderArtifactRetentionPolicy.class,
+                IcerikFabrikasiRenderArtifactCleanupPlan.class,
+                IcerikFabrikasiRenderArtifactService.class,
+                IcerikFabrikasiRenderArtifactStatus.class);
+
+        @Test
+        @DisplayName("19 FP-023 classes x 31 forbidden fields = 0 violations")
+        void allClassesSafe() {
+            for (Class<?> clazz : CLASSES) {
+                Set<String> fields = Arrays.stream(clazz.getDeclaredFields())
+                        .map(Field::getName).collect(Collectors.toSet());
+                for (String f : FORBIDDEN) {
+                    assertThat(fields)
+                            .as("field '%s' in %s", f, clazz.getSimpleName())
+                            .doesNotContain(f);
+                }
+            }
+        }
+    }
+
+    // ── I. Safety Envelope Defaults ──
+
+    @Nested
+    @DisplayName("I. Safety Envelope Defaults")
+    class SafetyEnvelopes {
+
+        @Test
+        @DisplayName("adapter safety envelope defaults")
+        void adapterEnvelope() {
+            var envelope = new IcerikFabrikasiRenderAdapterSafetyEnvelope(IcerikFabrikasiRenderAdapterMode.STUB);
+            assertThat(envelope.isHumanReviewRequired()).isTrue();
+            assertThat(envelope.isCopyrightReviewRequired()).isTrue();
+            assertThat(envelope.isAutoApproved()).isFalse();
+            assertThat(envelope.isNotPublishReady()).isTrue();
+            assertThat(envelope.isNotExportReady()).isTrue();
+        }
+
+        @Test
+        @DisplayName("disabled FFmpeg diagnostics envelope")
+        void disabledDiagnostics() {
+            var diag = ffmpegDisabled.getAdapterDiagnostics();
+            assertThat(diag.getSafetyEnvelope().isHumanReviewRequired()).isTrue();
+            assertThat(diag.getSafetyEnvelope().isAutoApproved()).isFalse();
+        }
+
+        @Test
+        @DisplayName("sandbox FFmpeg diagnostics envelope")
+        void sandboxDiagnostics() {
+            var diag = ffmpegSandbox.getAdapterDiagnostics();
+            assertThat(diag.isSuccess()).isTrue();
+            assertThat(diag.getSafetyEnvelope().isNotPublishReady()).isTrue();
+        }
+
+        @Test
+        @DisplayName("resolver diagnostics envelope")
+        void resolverDiagnostics() {
+            var result = defaultResolver.resolveWithDiagnostics(validPlan());
+            assertThat(result.getSafetyEnvelope().isHumanReviewRequired()).isTrue();
+            assertThat(result.getSafetyEnvelope().isAutoApproved()).isFalse();
+        }
+    }
+
+    // ── J. Sanitizer Integration ──
+
+    @Nested
+    @DisplayName("J. Sanitizer Integration")
+    class Sanitizer {
+
+        @Test
+        @DisplayName("disabled result sanitized")
+        void disabledSanitized() {
+            var result = ffmpegDisabled.execute(validPlan());
+            assertThat(result.getFailureMessage())
+                    .doesNotContain("password", "secret", "/usr", "C:\\");
+        }
+
+        @Test
+        @DisplayName("sandbox trace refs opaque")
+        void sandboxTrace() {
+            var result = ffmpegSandbox.execute(validPlan());
+            assertThat(result.getSafeTraceRef()).startsWith("ffmpeg-sandbox-trace:");
+            assertThat(result.getSafeTraceRef()).doesNotContain("http", "file://", ".mp4");
+        }
+
+        @Test
+        @DisplayName("disabled trace refs opaque")
+        void disabledTrace() {
+            var result = ffmpegDisabled.execute(validPlan());
+            assertThat(result.getSafeTraceRef()).startsWith("ffmpeg-disabled-trace:");
+        }
+    }
+
+    // ── K. No Publish/Export/Download ──
+
+    @Nested
+    @DisplayName("K. No Publish/Export/Download Endpoints")
+    class NoPublishExport {
+
+        @Test
+        @DisplayName("controller has no publish method")
+        void noPublish() {
+            var methods = Arrays.stream(IcerikFabrikasiVideoProjectController.class.getDeclaredMethods())
+                    .map(Method::getName).collect(Collectors.toSet());
+            assertThat(methods).doesNotContain("publish", "publishProject", "exportProject",
+                    "downloadVideo", "exportVideo", "publicDelivery");
+        }
+
+        @Test
+        @DisplayName("controller has no download method")
+        void noDownload() {
+            var methods = Arrays.stream(IcerikFabrikasiVideoProjectController.class.getDeclaredMethods())
+                    .map(Method::getName).collect(Collectors.toSet());
+            assertThat(methods).doesNotContain("download", "downloadFile", "downloadRender",
+                    "downloadArtifact", "getVideoFile");
+        }
+    }
+}

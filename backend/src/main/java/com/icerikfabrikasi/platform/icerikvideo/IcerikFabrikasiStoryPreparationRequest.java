@@ -1,0 +1,16 @@
+package com.icerikfabrikasi.platform.icerikvideo;
+
+/**
+ * FP-019 Task 03: Request DTO for story preparation.
+ * Optional narrative hints from admin. No lyrics, no credentials.
+ */
+public final class IcerikFabrikasiStoryPreparationRequest {
+    private String narrativeAngleHint;
+    private String additionalContextHint;
+
+    public IcerikFabrikasiStoryPreparationRequest() {}
+    public String getNarrativeAngleHint() { return narrativeAngleHint; }
+    public void setNarrativeAngleHint(String v) { this.narrativeAngleHint = v; }
+    public String getAdditionalContextHint() { return additionalContextHint; }
+    public void setAdditionalContextHint(String v) { this.additionalContextHint = v; }
+}
