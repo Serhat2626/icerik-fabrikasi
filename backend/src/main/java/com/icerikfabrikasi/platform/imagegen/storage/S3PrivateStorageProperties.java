@@ -1,0 +1,75 @@
+package com.icerikfabrikasi.platform.imagegen.storage;
+
+import org.springframework.stereotype.Component;
+import lombok.Data;
+import lombok.ToString;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * FP-009 Task 08: S3-compatible private storage configuration.
+ *
+ * <p>Configuration for S3/MinIO private image storage.
+ * Disabled by default — requires explicit opt-in.</p>
+ *
+ * <p>Security rules:</p>
+ * <ul>
+ *   <li>accessKey and secretKey are excluded from toString()/logging via @ToString.Exclude</li>
+ *   <li>Credentials are never exposed in DTO/API/error messages</li>
+ *   <li>Config values are never committed to source control</li>
+ *   <li>Use environment variables or external secret management</li>
+ * </ul>
+ */
+@Data
+@Component
+@ConfigurationProperties(prefix = "imagegen.storage.s3")
+public class S3PrivateStorageProperties {
+
+    /** Whether S3 storage is enabled. Default: false (uses InMemory mock). */
+    private boolean enabled = false;
+
+    /** S3 endpoint URL (e.g. "http://localhost:9000" for MinIO). */
+    private String endpoint = "";
+
+    /** AWS region or MinIO region. */
+    private String region = "us-east-1";
+
+    /** Target bucket name. Internal-only — never exposed to admin/user. */
+    private String bucket = "";
+
+    /** Object key prefix for image storage (e.g. "imagegen/"). */
+    private String pathPrefix = "imagegen/";
+
+    /** S3 access key — NEVER logged, serialized, or exposed. */
+    @ToString.Exclude
+    private String accessKey = "";
+
+    /** S3 secret key — NEVER logged, serialized, or exposed. */
+    @ToString.Exclude
+    private String secretKey = "";
+
+    /**
+     * FP-010 Task 02: Returns true if S3 is enabled AND has minimum required config.
+     * Does not validate credentials — that is handled at connection time.
+     */
+    public boolean isEnabledAndConfigured() {
+        return enabled
+                && bucket != null && !bucket.isBlank()
+                && endpoint != null && !endpoint.isBlank()
+                && region != null && !region.isBlank();
+    }
+
+    /**
+     * FP-010 Task 02: Validates config for production use.
+     * Returns null if valid, safe error message if invalid.
+     * Never includes secret values in the message.
+     */
+    public String validateForProduction() {
+        if (!enabled) return "S3 storage is disabled";
+        if (bucket == null || bucket.isBlank()) return "S3 bucket is not configured";
+        if (endpoint == null || endpoint.isBlank()) return "S3 endpoint is not configured";
+        if (region == null || region.isBlank()) return "S3 region is not configured";
+        if (accessKey == null || accessKey.isBlank()) return "S3 credentials are not configured";
+        if (secretKey == null || secretKey.isBlank()) return "S3 credentials are not configured";
+        return null; // valid
+    }
+}

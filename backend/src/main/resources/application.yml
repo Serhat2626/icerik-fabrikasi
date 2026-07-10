@@ -47,3 +47,8 @@ app:
       bucket: ${APP_STORAGE_S3_BUCKET:icerik-fabrikasi-dev}
       access-key: ${AWS_ACCESS_KEY_ID:}
       secret-key: ${AWS_SECRET_ACCESS_KEY:}
+
+# JWT Authentication
+jwt:
+  secret: ${JWT_SECRET:icerik-fabrikasi-dev-secret-key-minimum-256-bits-2026-change-in-production}
+  expiration-ms: 86400000  # 24 saat

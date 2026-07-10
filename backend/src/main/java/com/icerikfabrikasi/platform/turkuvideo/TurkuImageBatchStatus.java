@@ -1,0 +1,12 @@
+package com.icerikfabrikasi.platform.turkuvideo;
+
+/**
+ * FP-019 Task 04: Image batch status enum.
+ */
+public enum TurkuImageBatchStatus {
+    PREPARED,
+    PARTIAL,
+    COMPLETED,
+    BLOCKED,
+    FAILED
+}
