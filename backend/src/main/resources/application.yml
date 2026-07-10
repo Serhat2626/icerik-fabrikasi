@@ -12,7 +12,7 @@ spring:
     enabled: true
     locations: classpath:db/migration
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5434}/${POSTGRES_DB:icerik_fabrikasi}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:icerik_fabrikasi}
     username: ${POSTGRES_USER:icerik}
     password: ${POSTGRES_PASSWORD:icerik_dev}
   data:
