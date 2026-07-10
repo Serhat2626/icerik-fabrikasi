@@ -30,6 +30,7 @@ public class ShortsScriptResponse {
     int sceneCount;
     List<SceneResponse> scenes;
     String reviewNotes;
+    String videoUrl;
     LocalDateTime approvedAt;
     LocalDateTime publishedAt;
     LocalDateTime createdAt;
@@ -53,6 +54,13 @@ public class ShortsScriptResponse {
                         .build())
                 .toList();
 
+        // Video URL oluştur (render edilmişse)
+        String videoUrl = null;
+        if (script.getRenderOutputPath() != null && !script.getRenderOutputPath().isBlank()) {
+            videoUrl = "/api/admin/videos/stream?path=" +
+                    java.net.URLEncoder.encode(script.getRenderOutputPath(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+
         return ShortsScriptResponse.builder()
                 .id(script.getId())
                 .channelId(script.getChannel() != null ? script.getChannel().getId() : null)
@@ -68,6 +76,7 @@ public class ShortsScriptResponse {
                 .sceneCount(script.getScenes().size())
                 .scenes(sceneResponses)
                 .reviewNotes(script.getReviewNotes())
+                .videoUrl(videoUrl)
                 .approvedAt(script.getApprovedAt())
                 .publishedAt(script.getPublishedAt())
                 .createdAt(script.getCreatedAt())

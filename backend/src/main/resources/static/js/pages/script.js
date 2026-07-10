@@ -62,28 +62,25 @@ async function renderScriptPage(scriptId) {
                     ` : ''}
 
                     <!-- Video Player -->
-                    ${script.renderOutputPath ? `
+                    ${script.videoUrl ? `
                         <div class="script-meta-card" style="margin-top:16px;border-left:3px solid var(--accent-cyan)">
                             <h3>🎥 Video Önizleme</h3>
                             <div style="margin-top:12px;border-radius:12px;overflow:hidden;background:#000;position:relative;max-width:360px;margin:12px auto 0">
                                 <video id="video-player" controls playsinline
                                     style="width:100%;max-height:640px;display:block;border-radius:12px"
-                                    src="/api/admin/videos/stream?path=${encodeURIComponent(script.renderOutputPath)}">
+                                    src="${script.videoUrl}">
                                     Tarayıcınız video oynatmayı desteklemiyor.
                                 </video>
                             </div>
                             <div style="text-align:center;margin-top:8px">
-                                <span style="font-size:12px;color:var(--text-muted)">
-                                    📁 ${script.renderOutputPath.split(/[/\\\\]/).pop()}
-                                </span>
-                                <br>
-                                <a href="/api/admin/videos/stream?path=${encodeURIComponent(script.renderOutputPath)}"
+                                <a href="${script.videoUrl}"
                                    download style="font-size:12px;color:var(--accent-cyan);margin-top:4px;display:inline-block">
-                                    ⬇️ İndir
+                                    ⬇️ Videoyu İndir
                                 </a>
                             </div>
                         </div>
                     ` : ''}
+
 
                 </div>
 
@@ -145,16 +142,8 @@ async function renderScriptPage(scriptId) {
                         </div>
                     ` : ''}
 
-                    <!-- Render Output -->
-                    ${script.renderOutputPath ? `
-                        <div class="script-meta-card" style="margin-bottom:16px">
-                            <h3>🎥 Render Çıktısı</h3>
-                            <div class="info-row">
-                                <span class="info-label">Dosya</span>
-                                <span class="info-value" style="font-size:11px;word-break:break-all">${script.renderOutputPath}</span>
-                            </div>
-                        </div>
-                    ` : ''}
+
+
 
                     <!-- Status Flow -->
                     <div class="script-meta-card">
