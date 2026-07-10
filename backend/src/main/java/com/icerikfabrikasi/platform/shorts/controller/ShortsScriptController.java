@@ -1,0 +1,135 @@
+package com.icerikfabrikasi.platform.shorts.controller;
+
+import com.icerikfabrikasi.platform.common.api.ApiResponse;
+import com.icerikfabrikasi.platform.shorts.ShortsScript;
+import com.icerikfabrikasi.platform.shorts.ShortsScriptService;
+import com.icerikfabrikasi.platform.shorts.ShortsScriptService.SceneInput;
+import com.icerikfabrikasi.platform.shorts.ShortsScriptStatus;
+import com.icerikfabrikasi.platform.shorts.controller.dto.CreateShortsScriptRequest;
+import com.icerikfabrikasi.platform.shorts.controller.dto.ShortsScriptResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Shorts video script yönetim REST controller.
+ *
+ * <p>Script oluşturma, listeleme, review ve lifecycle yönetimi endpoint'leri.</p>
+ */
+@RestController
+@RequestMapping("/api/admin/shorts-scripts")
+@RequiredArgsConstructor
+@Tag(name = "Shorts Scripts", description = "YouTube Shorts video script yönetimi")
+public class ShortsScriptController {
+
+    private final ShortsScriptService shortsScriptService;
+
+    // ── POST /api/admin/shorts-scripts ──────────────────
+
+    @PostMapping
+    @Operation(summary = "Yeni shorts script oluştur")
+    public ResponseEntity<ApiResponse<ShortsScriptResponse>> createScript(
+            @Valid @RequestBody CreateShortsScriptRequest request) {
+
+        List<SceneInput> sceneInputs = request.getScenes().stream()
+                .map(s -> new SceneInput(s.getText(), s.getVisualHint(), s.getDurationSeconds()))
+                .toList();
+
+        ShortsScript script = shortsScriptService.createScript(
+                request.getChannelId(),
+                request.getTopic(),
+                request.getTitle(),
+                request.getHook(),
+                request.getCta(),
+                request.getHashtags(),
+                sceneInputs
+        );
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(ShortsScriptResponse.from(script),
+                        "Script başarıyla oluşturuldu"));
+    }
+
+    // ── GET /api/admin/shorts-scripts?channelId=...&status=... ──
+
+    @GetMapping
+    @Operation(summary = "Shorts script'lerini listele")
+    public ResponseEntity<ApiResponse<List<ShortsScriptResponse>>> listScripts(
+            @RequestParam UUID channelId,
+            @RequestParam(required = false) ShortsScriptStatus status) {
+
+        List<ShortsScript> scripts;
+        if (status != null) {
+            scripts = shortsScriptService.getScriptsByStatus(channelId, status);
+        } else {
+            scripts = shortsScriptService.getScriptsByChannel(channelId);
+        }
+
+        List<ShortsScriptResponse> responses = scripts.stream()
+                .map(ShortsScriptResponse::from)
+                .toList();
+
+        return ResponseEntity.ok(ApiResponse.success(responses));
+    }
+
+    // ── GET /api/admin/shorts-scripts/{id} ──────────────
+
+    @GetMapping("/{scriptId}")
+    @Operation(summary = "Shorts script detayını getir")
+    public ResponseEntity<ApiResponse<ShortsScriptResponse>> getScript(
+            @PathVariable UUID scriptId) {
+
+        ShortsScript script = shortsScriptService.getScript(scriptId);
+        return ResponseEntity.ok(ApiResponse.success(ShortsScriptResponse.from(script)));
+    }
+
+    // ── POST /api/admin/shorts-scripts/{id}/approve ─────
+
+    @PostMapping("/{scriptId}/approve")
+    @Operation(summary = "Script'i onayla — render'a hazır")
+    public ResponseEntity<ApiResponse<ShortsScriptResponse>> approveScript(
+            @PathVariable UUID scriptId) {
+
+        ShortsScript script = shortsScriptService.approveScript(scriptId);
+        return ResponseEntity.ok(ApiResponse.success(ShortsScriptResponse.from(script),
+                "Script onaylandı — render'a hazır"));
+    }
+
+    // ── POST /api/admin/shorts-scripts/{id}/request-revision ─
+
+    @PostMapping("/{scriptId}/request-revision")
+    @Operation(summary = "Script revizyon iste")
+    public ResponseEntity<ApiResponse<ShortsScriptResponse>> requestRevision(
+            @PathVariable UUID scriptId,
+            @RequestBody String reviewNotes) {
+
+        ShortsScript script = shortsScriptService.requestRevision(scriptId, reviewNotes);
+        return ResponseEntity.ok(ApiResponse.success(ShortsScriptResponse.from(script),
+                "Revizyon istendi"));
+    }
+
+    // ── POST /api/admin/shorts-scripts/{id}/publish ─────
+
+    @PostMapping("/{scriptId}/publish")
+    @Operation(summary = "Script'i yayınlandı olarak işaretle")
+    public ResponseEntity<ApiResponse<ShortsScriptResponse>> markPublished(
+            @PathVariable UUID scriptId) {
+
+        ShortsScript script = shortsScriptService.markPublished(scriptId);
+        return ResponseEntity.ok(ApiResponse.success(ShortsScriptResponse.from(script),
+                "Video yayınlandı olarak işaretlendi"));
+    }
+}
