@@ -60,6 +60,31 @@ async function renderScriptPage(scriptId) {
                             <p>${script.cta}</p>
                         </div>
                     ` : ''}
+
+                    <!-- Video Player -->
+                    ${script.renderOutputPath ? `
+                        <div class="script-meta-card" style="margin-top:16px;border-left:3px solid var(--accent-cyan)">
+                            <h3>🎥 Video Önizleme</h3>
+                            <div style="margin-top:12px;border-radius:12px;overflow:hidden;background:#000;position:relative;max-width:360px;margin:12px auto 0">
+                                <video id="video-player" controls playsinline
+                                    style="width:100%;max-height:640px;display:block;border-radius:12px"
+                                    src="/api/admin/videos/stream?path=${encodeURIComponent(script.renderOutputPath)}">
+                                    Tarayıcınız video oynatmayı desteklemiyor.
+                                </video>
+                            </div>
+                            <div style="text-align:center;margin-top:8px">
+                                <span style="font-size:12px;color:var(--text-muted)">
+                                    📁 ${script.renderOutputPath.split(/[/\\\\]/).pop()}
+                                </span>
+                                <br>
+                                <a href="/api/admin/videos/stream?path=${encodeURIComponent(script.renderOutputPath)}"
+                                   download style="font-size:12px;color:var(--accent-cyan);margin-top:4px;display:inline-block">
+                                    ⬇️ İndir
+                                </a>
+                            </div>
+                        </div>
+                    ` : ''}
+
                 </div>
 
                 <!-- Sidebar -->
