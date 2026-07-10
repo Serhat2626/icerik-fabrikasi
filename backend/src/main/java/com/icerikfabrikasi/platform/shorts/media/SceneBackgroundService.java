@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,8 +49,17 @@ public class SceneBackgroundService {
                 return null;
             }
 
-            // 2. İndir
-            Path downloadPath = downloadImage(item.getUrl(), item.getExternalId());
+            // 2. Daha önce indirilmişse cache'ten döndür
+            Path dir = Path.of(cacheDir);
+            Files.createDirectories(dir);
+            Path cached = dir.resolve(item.getExternalId() + ".jpg");
+            if (Files.exists(cached) && Files.size(cached) > 1000) {
+                log.info("Arka plan cache'ten yüklendi: hint='{}', path={}", visualHint, cached);
+                return cached;
+            }
+
+            // 3. İndir (header ile — Pexels 403 sorunu fix)
+            Path downloadPath = downloadImage(item.getUrl(), cached);
             log.info("Arka plan görseli indirildi: hint='{}', source={}, path={}",
                     visualHint, item.getSource(), downloadPath);
             return downloadPath;
@@ -60,15 +70,16 @@ public class SceneBackgroundService {
         }
     }
 
-    private Path downloadImage(String url, String externalId) throws IOException {
-        Path dir = Path.of(cacheDir);
-        Files.createDirectories(dir);
+    private Path downloadImage(String url, Path target) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+        conn.setRequestProperty("User-Agent", "IcerikFabrikasi/1.0");
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(15000);
 
-        String filename = externalId + "_" + UUID.randomUUID() + ".jpg";
-        Path target = dir.resolve(filename);
-
-        try (InputStream in = URI.create(url).toURL().openStream()) {
+        try (InputStream in = conn.getInputStream()) {
             Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            conn.disconnect();
         }
 
         return target;

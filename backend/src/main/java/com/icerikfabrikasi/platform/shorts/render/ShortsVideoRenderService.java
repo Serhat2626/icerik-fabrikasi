@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -16,7 +15,7 @@ import java.util.UUID;
 /**
  * Profesyonel kalitede Shorts video render servisi.
  *
- * <p>Her sahne için: gradient arka plan veya stock görsel + animasyonlu text overlay.
+ * <p>Her sahne için: stock görsel arka plan + karartma + modern text kutusu.
  * Sahneler arası concat + arka plan müzik.</p>
  */
 @Service
@@ -28,6 +27,8 @@ public class ShortsVideoRenderService {
 
     @Value("${shorts.render.ffmpeg-path:ffmpeg}")
     private String ffmpegPath;
+
+    private static final int MAX_CHARS_PER_LINE = 26;
 
     public ShortsRenderResult render(ShortsRenderPlan plan) {
         log.info("Shorts video render başlıyor: {} sahne, ~{} saniye",
@@ -44,7 +45,6 @@ public class ShortsVideoRenderService {
                 sceneClips.add(clipPath);
             }
 
-            // Concat ile birleştir
             Path finalOutput = concatenateClips(workDir, sceneClips, plan);
 
             long fileSize = Files.exists(finalOutput) ? Files.size(finalOutput) : 0;
@@ -65,7 +65,9 @@ public class ShortsVideoRenderService {
     }
 
     /**
-     * Tek sahne clip: solid arka plan + text overlay, fade geçiş.
+     * Tek sahne clip:
+     * - Arka plan görsel varsa: görsel + karartma + text kutusu
+     * - Yoksa: gradient arka plan + text
      */
     private Path renderSceneClip(Path workDir, ShortsRenderPlan plan, SceneRenderPlan scene)
             throws IOException, InterruptedException {
@@ -73,11 +75,12 @@ public class ShortsVideoRenderService {
         Path outputPath = workDir.resolve(
                 String.format("scene_%03d.mp4", scene.getOrderIndex()));
 
-        // Text'i temizle — emoji ve özel karakterleri kaldır
         String cleanText = sanitizeText(scene.getText());
+        String wrappedText = wrapText(cleanText, MAX_CHARS_PER_LINE);
+        String escapedText = escapeForDrawtext(wrappedText);
 
-        int fontSize = scene.isHook() ? plan.getHookFontSize() : plan.getBodyFontSize();
-        String textColor = hexToFfmpeg(scene.isHook() ? plan.getAccentColor() : plan.getTextColor());
+        int fontSize = scene.isHook() ? 52 : 42;
+        String textColor = scene.isHook() ? "0xFFD700" : "0xFFFFFF";
         int dur = scene.getDurationSeconds();
         String bgColor = hexToFfmpeg(plan.getBackgroundColor());
         int fadeOutStart = Math.max(1, dur - 1);
@@ -90,39 +93,46 @@ public class ShortsVideoRenderService {
         cmd.add("-y");
 
         if (hasImage) {
+            // Arka plan: stock görsel + karartma overlay + modern text kutusu
             cmd.addAll(List.of("-loop", "1", "-i", scene.getBackgroundImagePath()));
             cmd.addAll(List.of("-t", String.valueOf(dur)));
 
+            // Filter: scale → crop 1080x1920 → karartma → text box → fade
             String filter = String.format(
                     "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," +
-                    "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.5:t=fill," +
-                    "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
+                    // Yarı saydam karartma — text okunabilirliği için
+                    "drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.6:t=fill," +
+                    // Text — kutu arka planlı modern görünüm
+                    "drawtext=text='%s':" +
+                    "fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
-                    "shadowcolor=black@0.8:shadowx=3:shadowy=3," +
-                    "fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
-                    escapeForDrawtext(cleanText), fontSize, textColor, fadeOutStart
+                    "shadowcolor=black@0.9:shadowx=3:shadowy=3:" +
+                    "line_spacing=14," +
+                    // Fade in/out
+                    "fade=t=in:st=0:d=0.5,fade=t=out:st=%d:d=0.5",
+                    escapedText, fontSize, textColor, fadeOutStart
             );
 
             cmd.addAll(List.of("-vf", filter));
         } else {
-            cmd.addAll(List.of(
-                    "-f", "lavfi", "-i",
-                    String.format("color=c=%s:s=1080x1920:d=%d:r=%d",
-                            bgColor, dur, plan.getFps())
-            ));
-
-            String textFilter = String.format(
-                    "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
+            // Gradient arka plan
+            String gradientFilter = String.format(
+                    "color=c=%s:s=1080x1920:d=%d:r=%d,format=yuv420p," +
+                    "drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.3:t=fill," +
+                    "drawtext=text='%s':" +
+                    "fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
-                    "shadowcolor=black@0.7:shadowx=2:shadowy=2," +
-                    "fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
-                    escapeForDrawtext(cleanText), fontSize, textColor, fadeOutStart
+                    "shadowcolor=black@0.7:shadowx=2:shadowy=2:" +
+                    "line_spacing=14," +
+                    "fade=t=in:st=0:d=0.5,fade=t=out:st=%d:d=0.5",
+                    bgColor, dur, plan.getFps(),
+                    escapedText, fontSize, textColor, fadeOutStart
             );
 
-            cmd.addAll(List.of("-vf", textFilter));
+            cmd.addAll(List.of("-f", "lavfi", "-i", gradientFilter));
         }
 
-        cmd.addAll(List.of("-c:v", "libx264", "-preset", "ultrafast", "-crf", "26"));
+        cmd.addAll(List.of("-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"));
         cmd.addAll(List.of("-pix_fmt", "yuv420p"));
         cmd.addAll(List.of("-t", String.valueOf(dur)));
         cmd.add(outputPath.toString());
@@ -132,7 +142,7 @@ public class ShortsVideoRenderService {
     }
 
     /**
-     * Sahne clip'lerini birleştirir.
+     * Sahne clip'lerini birleştirir, varsa müzik ekler.
      */
     private Path concatenateClips(Path workDir, List<Path> clips, ShortsRenderPlan plan)
             throws IOException, InterruptedException {
@@ -202,7 +212,7 @@ public class ShortsVideoRenderService {
     /** Text'ten emoji ve sorunlu karakterleri temizle */
     private String sanitizeText(String text) {
         if (text == null) return "";
-        return text.replaceAll("[^\\x20-\\x7E]", "")  // non-ASCII kaldır
+        return text.replaceAll("[^\\x20-\\x7E]", "")
                    .replace("'", "")
                    .replace("\"", "")
                    .replace("%", " percent")
@@ -210,11 +220,38 @@ public class ShortsVideoRenderService {
                    .trim();
     }
 
+    /** FFmpeg drawtext için metni escape et */
     private String escapeForDrawtext(String text) {
         if (text == null) return "";
         return text
                 .replace("\\", "\\\\")
                 .replace(":", "\\:")
-                .replace("\n", " ");
+                .replace("\n", "\\n");
+    }
+
+    /**
+     * Uzun text'i satırlara böler (FFmpeg drawtext \n desteği).
+     */
+    private String wrapText(String text, int maxChars) {
+        if (text == null || text.length() <= maxChars) return text;
+
+        StringBuilder result = new StringBuilder();
+        String[] words = text.split("\\s+");
+        int lineLen = 0;
+
+        for (String word : words) {
+            if (lineLen + word.length() + 1 > maxChars && lineLen > 0) {
+                result.append("\n");
+                lineLen = 0;
+            }
+            if (lineLen > 0) {
+                result.append(" ");
+                lineLen++;
+            }
+            result.append(word);
+            lineLen += word.length();
+        }
+
+        return result.toString();
     }
 }
