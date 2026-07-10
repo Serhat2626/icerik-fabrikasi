@@ -36,13 +36,15 @@ public class ShortsVideoRenderService {
             Path workDir = prepareWorkDir();
             List<Path> sceneClips = new ArrayList<>();
 
+            int idx = 0;
             for (SceneRenderPlan scene : plan.getScenes()) {
+                log.info("  Sahne {}/{} render ediliyor...", ++idx, plan.getScenes().size());
                 Path clipPath = renderSceneClip(workDir, plan, scene);
                 sceneClips.add(clipPath);
             }
 
-            // Crossfade ile birleştir
-            Path finalOutput = concatenateWithTransitions(workDir, sceneClips, plan);
+            // Concat ile birleştir
+            Path finalOutput = concatenateClips(workDir, sceneClips, plan);
 
             long fileSize = Files.exists(finalOutput) ? Files.size(finalOutput) : 0;
 
@@ -62,82 +64,67 @@ public class ShortsVideoRenderService {
     }
 
     /**
-     * Tek sahne clip: gradient/stock arka plan + animasyonlu text overlay
+     * Tek sahne clip: solid arka plan + text overlay, fade geçiş.
      */
     private Path renderSceneClip(Path workDir, ShortsRenderPlan plan, SceneRenderPlan scene)
             throws IOException, InterruptedException {
 
         Path outputPath = workDir.resolve(
-                String.format("scene_%03d_%s.mp4", scene.getOrderIndex(), UUID.randomUUID()));
+                String.format("scene_%03d.mp4", scene.getOrderIndex()));
 
         int fontSize = scene.isHook() ? plan.getHookFontSize() : plan.getBodyFontSize();
         String textColor = hexToFfmpeg(scene.isHook() ? plan.getAccentColor() : plan.getTextColor());
         int dur = scene.getDurationSeconds();
-        String res = plan.getResolution(); // 1080x1920
+        String bgColor = hexToFfmpeg(plan.getBackgroundColor());
+
+        boolean hasImage = scene.getBackgroundImagePath() != null
+                && Files.exists(Path.of(scene.getBackgroundImagePath()));
 
         List<String> cmd = new ArrayList<>();
         cmd.add(ffmpegPath);
         cmd.add("-y");
 
-        boolean hasImage = scene.getBackgroundImagePath() != null
-                && Files.exists(Path.of(scene.getBackgroundImagePath()));
-
         if (hasImage) {
-            // Stock görsel arka plan — scale+crop to 9:16 + slight zoom animation
+            // Stock görsel → scale+crop 9:16, dark overlay + text
             cmd.addAll(List.of("-loop", "1", "-i", scene.getBackgroundImagePath()));
             cmd.addAll(List.of("-t", String.valueOf(dur)));
 
-            // Ken Burns effect (subtle zoom) + dark overlay + text
             String filter = String.format(
                     "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," +
-                    "zoompan=z='min(zoom+0.001,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d*%d:s=1080x1920:fps=%d," +
-                    "colorbalance=bs=-0.15," +
-                    "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.45:t=fill," +
+                    "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.5:t=fill," +
                     "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
-                    "shadowcolor=black@0.8:shadowx=3:shadowy=3:" +
-                    "enable='between(t,0.3,%d)':" +
-                    "alpha='if(lt(t,0.8),t/0.5,if(gt(t,%d-0.5),((%d-t)/0.5),1))'",
-                    dur, plan.getFps(), plan.getFps(),
+                    "shadowcolor=black@0.8:shadowx=3:shadowy=3," +
+                    "fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
                     escapeForDrawtext(scene.getText()), fontSize, textColor,
-                    dur, dur, dur
+                    Math.max(1, dur - 1)
             );
 
             // Watermark
             if (plan.getWatermarkText() != null) {
-                filter += String.format(
-                        ",drawtext=text='%s':fontsize=22:fontcolor=white@0.4:" +
-                        "x=(w-text_w)/2:y=h-th-60",
-                        escapeForDrawtext(plan.getWatermarkText())
+                filter = filter.replace(
+                        "fade=t=in:st=0:d=0.4,fade=t=out",
+                        String.format("drawtext=text='%s':fontsize=22:fontcolor=white@0.4:" +
+                                "x=(w-text_w)/2:y=h-th-60," +
+                                "fade=t=in:st=0:d=0.4,fade=t=out",
+                                escapeForDrawtext(plan.getWatermarkText()))
                 );
             }
 
             cmd.addAll(List.of("-vf", filter));
         } else {
-            // Gradient arka plan (daha profesyonel görünüm)
-            String bgColor = hexToFfmpeg(plan.getBackgroundColor());
-            String accentColor = hexToFfmpeg(plan.getAccentColor());
-
-            // Animated gradient background
-            String gradientFilter = String.format(
-                    "gradients=s=1080x1920:c0=%s:c1=%s:x0=0:y0=0:x1=1080:y1=1920:d=%d:r=%d:speed=0.8",
-                    bgColor, accentColor, dur, plan.getFps()
-            );
-
-            // Fallback: solid color with subtle animation if gradients filter not available
+            // Solid color arka plan + text
             cmd.addAll(List.of(
                     "-f", "lavfi", "-i",
-                    String.format("color=c=%s:s=%s:d=%d:r=%d",
-                            bgColor, res, dur, plan.getFps())
+                    String.format("color=c=%s:s=1080x1920:d=%d:r=%d",
+                            bgColor, dur, plan.getFps())
             ));
 
-            // Text with fade-in/fade-out animation
             String textFilter = String.format(
                     "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
-                    "shadowcolor=black@0.7:shadowx=2:shadowy=2:" +
-                    "enable='between(t,0.3,%d)'",
-                    escapeForDrawtext(scene.getText()), fontSize, textColor, dur
+                    "shadowcolor=black@0.7:shadowx=2:shadowy=2",
+                    escapeForDrawtext(scene.getText()), fontSize, textColor
             );
 
             // Watermark
@@ -149,13 +136,14 @@ public class ShortsVideoRenderService {
                 );
             }
 
-            // Fade in/out for scene transitions
-            textFilter += String.format(",fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4", dur - 1);
+            // Fade in/out
+            textFilter += String.format(",fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
+                    Math.max(1, dur - 1));
 
             cmd.addAll(List.of("-vf", textFilter));
         }
 
-        cmd.addAll(List.of("-c:v", "libx264", "-preset", "fast", "-crf", "23"));
+        cmd.addAll(List.of("-c:v", "libx264", "-preset", "ultrafast", "-crf", "26"));
         cmd.addAll(List.of("-pix_fmt", "yuv420p"));
         cmd.addAll(List.of("-t", String.valueOf(dur)));
         cmd.add(outputPath.toString());
@@ -165,12 +153,11 @@ public class ShortsVideoRenderService {
     }
 
     /**
-     * Sahne clip'lerini crossfade ile birleştirir + arka plan müzik ekler.
+     * Sahne clip'lerini birleştirir.
      */
-    private Path concatenateWithTransitions(Path workDir, List<Path> clips, ShortsRenderPlan plan)
+    private Path concatenateClips(Path workDir, List<Path> clips, ShortsRenderPlan plan)
             throws IOException, InterruptedException {
 
-        // Basit concat (crossfade FFmpeg'de complex, önce basit concat yapalım)
         Path concatList = workDir.resolve("concat_list.txt");
         List<String> lines = clips.stream()
                 .map(p -> "file '" + p.toAbsolutePath().toString().replace("\\", "/") + "'")
@@ -193,7 +180,7 @@ public class ShortsVideoRenderService {
             cmd.addAll(List.of("-filter_complex",
                     String.format("[1:a]volume=%.2f,afade=t=out:st=%d:d=3[music]",
                             plan.getMusicVolume(),
-                            plan.totalDurationSeconds() - 3)));
+                            Math.max(1, plan.totalDurationSeconds() - 3))));
             cmd.addAll(List.of("-map", "0:v", "-map", "[music]"));
             cmd.addAll(List.of("-shortest"));
         } else {

@@ -129,26 +129,118 @@ async function doApproveAll(channelId, name, count) {
 
 async function doBatchRender(channelId, name) {
     if (!confirm(`"${name}" kanalının tüm onaylı script'leri render edilecek. Devam?`)) return;
-    Toast.info('Toplu render başlıyor...');
+
     try {
-        const res = await API.batchRender(channelId);
-        const report = res.data;
-        Toast.success(`Render tamamlandı: ${report.successCount}/${report.totalScripts} başarılı`);
+        const scriptsRes = await API.getScripts(channelId);
+        const approved = scriptsRes.data.filter(s => s.status === 'APPROVED');
+
+        if (approved.length === 0) {
+            Toast.warning('Render edilecek onaylı script yok. Önce script\'leri onaylayın.');
+            return;
+        }
+
+        // Progress bar oluştur
+        showProgressBar(`🎬 ${name} — Render`, approved.length);
+
+        let ok = 0, fail = 0;
+        for (let i = 0; i < approved.length; i++) {
+            const script = approved[i];
+            updateProgressBar(i, approved.length, `Render: "${script.title}"`);
+            try {
+                await API.renderScript(script.id);
+                ok++;
+            } catch (e) {
+                fail++;
+                console.warn('Render hatası:', script.id, e);
+            }
+        }
+
+        hideProgressBar();
+        Toast.success(`Render tamamlandı: ${ok}/${approved.length} başarılı` + (fail > 0 ? `, ${fail} hata` : ''));
         renderOverview();
     } catch (err) {
+        hideProgressBar();
         Toast.error('Render hatası: ' + err.message);
     }
 }
 
 async function doBatchPublish(channelId, name) {
     if (!confirm(`"${name}" kanalının tüm render edilmiş videoları yayınlanacak. Devam?`)) return;
-    Toast.info('Toplu yayınlama başlıyor...');
+
     try {
-        const res = await API.batchPublish(channelId);
-        const report = res.data;
-        Toast.success(`Yayınlama tamamlandı: ${report.successCount}/${report.totalScripts} başarılı`);
+        const scriptsRes = await API.getScripts(channelId);
+        const rendered = scriptsRes.data.filter(s => s.status === 'RENDERED');
+
+        if (rendered.length === 0) {
+            Toast.warning('Yayınlanacak render edilmiş video yok.');
+            return;
+        }
+
+        showProgressBar(`📤 ${name} — Yayınlama`, rendered.length);
+
+        let ok = 0, fail = 0;
+        for (let i = 0; i < rendered.length; i++) {
+            const script = rendered[i];
+            updateProgressBar(i, rendered.length, `Yayınlanıyor: "${script.title}"`);
+            try {
+                await API.publishScript(script.id);
+                ok++;
+            } catch (e) {
+                fail++;
+                console.warn('Publish hatası:', script.id, e);
+            }
+        }
+
+        hideProgressBar();
+        Toast.success(`Yayınlama tamamlandı: ${ok}/${rendered.length} başarılı` + (fail > 0 ? `, ${fail} hata` : ''));
         renderOverview();
     } catch (err) {
+        hideProgressBar();
         Toast.error('Yayınlama hatası: ' + err.message);
+    }
+}
+
+// ── Progress Bar ──
+function showProgressBar(title, total) {
+    let bar = document.getElementById('batch-progress');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'batch-progress';
+        bar.innerHTML = `
+            <div class="progress-title"></div>
+            <div class="progress-status"></div>
+            <div class="progress-track"><div class="progress-fill"></div></div>
+        `;
+        bar.style.cssText = `
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: rgba(15,15,30,0.95); border: 1px solid var(--accent-primary);
+            border-radius: 12px; padding: 20px 30px; z-index: 10000; min-width: 450px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 15px rgba(108,99,255,0.3);
+            backdrop-filter: blur(10px);
+        `;
+        document.body.appendChild(bar);
+    }
+    bar.querySelector('.progress-title').textContent = title;
+    bar.querySelector('.progress-title').style.cssText = 'font-weight:700;font-size:16px;margin-bottom:8px;color:white;';
+    bar.querySelector('.progress-status').style.cssText = 'font-size:13px;color:#aaa;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px;';
+    bar.querySelector('.progress-track').style.cssText = 'height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;';
+    bar.querySelector('.progress-fill').style.cssText = 'height:100%;background:linear-gradient(90deg,var(--accent-primary),var(--accent-secondary));border-radius:4px;transition:width 0.3s ease;width:0%';
+    bar.style.display = 'block';
+}
+
+function updateProgressBar(current, total, statusText) {
+    const bar = document.getElementById('batch-progress');
+    if (!bar) return;
+    const pct = Math.round(((current + 1) / total) * 100);
+    bar.querySelector('.progress-fill').style.width = pct + '%';
+    bar.querySelector('.progress-status').textContent = `${current + 1}/${total} — ${statusText}`;
+}
+
+function hideProgressBar() {
+    const bar = document.getElementById('batch-progress');
+    if (bar) {
+        bar.querySelector('.progress-fill').style.width = '100%';
+        bar.querySelector('.progress-status').textContent = '✅ Tamamlandı!';
+        setTimeout(() => bar.remove(), 2000);
     }
 }
