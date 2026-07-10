@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -65,8 +65,7 @@ public class ShortsVideoRenderService {
     }
 
     /**
-     * Tek sahne clip: solid arka plan + textfile overlay, fade geçiş.
-     * Text dosyaya yazılır — emoji/özel karakter sorununu önler.
+     * Tek sahne clip: solid arka plan + text overlay, fade geçiş.
      */
     private Path renderSceneClip(Path workDir, ShortsRenderPlan plan, SceneRenderPlan scene)
             throws IOException, InterruptedException {
@@ -74,10 +73,8 @@ public class ShortsVideoRenderService {
         Path outputPath = workDir.resolve(
                 String.format("scene_%03d.mp4", scene.getOrderIndex()));
 
-        // Text'i dosyaya yaz — FFmpeg'deki escape sorunlarını önler
+        // Text'i temizle — emoji ve özel karakterleri kaldır
         String cleanText = sanitizeText(scene.getText());
-        Path textFile = workDir.resolve(String.format("text_%03d.txt", scene.getOrderIndex()));
-        Files.writeString(textFile, cleanText, StandardCharsets.UTF_8);
 
         int fontSize = scene.isHook() ? plan.getHookFontSize() : plan.getBodyFontSize();
         String textColor = hexToFfmpeg(scene.isHook() ? plan.getAccentColor() : plan.getTextColor());
@@ -99,11 +96,11 @@ public class ShortsVideoRenderService {
             String filter = String.format(
                     "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," +
                     "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.5:t=fill," +
-                    "drawtext=textfile='%s':fontsize=%d:fontcolor=%s:" +
+                    "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
                     "shadowcolor=black@0.8:shadowx=3:shadowy=3," +
                     "fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
-                    escapePathForFilter(textFile), fontSize, textColor, fadeOutStart
+                    escapeForDrawtext(cleanText), fontSize, textColor, fadeOutStart
             );
 
             cmd.addAll(List.of("-vf", filter));
@@ -115,11 +112,11 @@ public class ShortsVideoRenderService {
             ));
 
             String textFilter = String.format(
-                    "drawtext=textfile='%s':fontsize=%d:fontcolor=%s:" +
+                    "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
                     "shadowcolor=black@0.7:shadowx=2:shadowy=2," +
                     "fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
-                    escapePathForFilter(textFile), fontSize, textColor, fadeOutStart
+                    escapeForDrawtext(cleanText), fontSize, textColor, fadeOutStart
             );
 
             cmd.addAll(List.of("-vf", textFilter));
@@ -205,17 +202,19 @@ public class ShortsVideoRenderService {
     /** Text'ten emoji ve sorunlu karakterleri temizle */
     private String sanitizeText(String text) {
         if (text == null) return "";
-        // Emoji ve non-ASCII karakterleri kaldır, sadece basit text bırak
-        return text.replaceAll("[^\\x20-\\x7E]", "")
-                   .replace("'", "'")
-                   .replace("\"", "'")
+        return text.replaceAll("[^\\x20-\\x7E]", "")  // non-ASCII kaldır
+                   .replace("'", "")
+                   .replace("\"", "")
+                   .replace("%", " percent")
+                   .replace("$", "")
                    .trim();
     }
 
-    /** Windows path'ini FFmpeg filter için escape et */
-    private String escapePathForFilter(Path path) {
-        return path.toAbsolutePath().toString()
-                .replace("\\", "/")
-                .replace(":", "\\:");
+    private String escapeForDrawtext(String text) {
+        if (text == null) return "";
+        return text
+                .replace("\\", "\\\\")
+                .replace(":", "\\:")
+                .replace("\n", " ");
     }
 }
