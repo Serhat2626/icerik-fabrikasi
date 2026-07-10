@@ -77,6 +77,9 @@ public class ShortsRenderPlan {
         /** Arka plan görsel dosya yolu (stock image veya AI generated) */
         String backgroundImagePath;
 
+        /** Seslendirme MP3 dosya yolu (ElevenLabs TTS) */
+        String voiceoverPath;
+
         /** Sahne süresi (saniye) */
         int durationSeconds;
 

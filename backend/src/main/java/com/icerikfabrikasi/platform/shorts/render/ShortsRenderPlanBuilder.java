@@ -6,6 +6,7 @@ import com.icerikfabrikasi.platform.shorts.ShortsScriptScene;
 import com.icerikfabrikasi.platform.shorts.media.MusicLibraryService;
 import com.icerikfabrikasi.platform.shorts.media.MusicLibraryService.MusicTrack;
 import com.icerikfabrikasi.platform.shorts.media.SceneBackgroundService;
+import com.icerikfabrikasi.platform.shorts.media.VoiceoverService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -18,7 +19,7 @@ import java.util.List;
  * ShortsScript → ShortsRenderPlan dönüştürücü.
  *
  * <p>Script ve kanal konfigürasyonundan render planı üretir.
- * Her sahne için stock arka plan görseli arar ve müzik seçer.</p>
+ * Her sahne için stock arka plan görseli arar, seslendirme üretir ve müzik seçer.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -27,6 +28,7 @@ public class ShortsRenderPlanBuilder {
 
     private final SceneBackgroundService backgroundService;
     private final MusicLibraryService musicLibraryService;
+    private final VoiceoverService voiceoverService;
 
     /**
      * Script ve kanal bilgisinden render planı oluşturur.
@@ -35,36 +37,63 @@ public class ShortsRenderPlanBuilder {
         log.info("Render planı oluşturuluyor: script={}, channel={}",
                 script.getId(), channel.getName());
 
-        List<ShortsRenderPlan.SceneRenderPlan> sceneRenderPlans = new ArrayList<>();
+        // 1. Sahne metinlerini topla (seslendirme için)
+        List<String> allTexts = new ArrayList<>();
+        allTexts.add(script.getHook());
+        for (ShortsScriptScene scene : script.getScenes()) {
+            allTexts.add(scene.getText());
+        }
+        if (script.getCta() != null && !script.getCta().isBlank()) {
+            allTexts.add(script.getCta());
+        }
 
-        // Hook sahnesi (ilk sahne: script.hook)
+        // 2. Seslendirme üret (ElevenLabs TTS)
+        List<Path> voicePaths = voiceoverService.generateVoiceovers(allTexts);
+
+        // 3. Sahne render planları oluştur
+        List<ShortsRenderPlan.SceneRenderPlan> sceneRenderPlans = new ArrayList<>();
+        int voiceIdx = 0;
+
+        // Hook sahnesi
         Path hookBg = backgroundService.resolveBackground("dramatic dark background finance");
+        Path hookVoice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
+        int hookDuration = calculateDuration(hookVoice, 4);
+
         sceneRenderPlans.add(ShortsRenderPlan.SceneRenderPlan.builder()
                 .orderIndex(0)
                 .text(script.getHook())
                 .backgroundImagePath(hookBg != null ? hookBg.toString() : null)
-                .durationSeconds(4)
+                .voiceoverPath(hookVoice != null ? hookVoice.toString() : null)
+                .durationSeconds(hookDuration)
                 .isHook(true)
                 .build());
 
         // İçerik sahneleri
         for (ShortsScriptScene scene : script.getScenes()) {
             Path bg = backgroundService.resolveBackground(scene.getVisualHint());
+            Path voice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
+            int duration = calculateDuration(voice, scene.getDurationSeconds());
+
             sceneRenderPlans.add(ShortsRenderPlan.SceneRenderPlan.builder()
                     .orderIndex(scene.getOrderIndex() + 1)
                     .text(scene.getText())
                     .backgroundImagePath(bg != null ? bg.toString() : null)
-                    .durationSeconds(scene.getDurationSeconds())
+                    .voiceoverPath(voice != null ? voice.toString() : null)
+                    .durationSeconds(duration)
                     .isHook(false)
                     .build());
         }
 
-        // CTA sahnesi (son sahne)
+        // CTA sahnesi
         if (script.getCta() != null && !script.getCta().isBlank()) {
+            Path ctaVoice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
+            int ctaDuration = calculateDuration(ctaVoice, 4);
+
             sceneRenderPlans.add(ShortsRenderPlan.SceneRenderPlan.builder()
                     .orderIndex(sceneRenderPlans.size())
                     .text(script.getCta())
-                    .durationSeconds(4)
+                    .voiceoverPath(ctaVoice != null ? ctaVoice.toString() : null)
+                    .durationSeconds(ctaDuration)
                     .isHook(false)
                     .build());
         }
@@ -87,10 +116,32 @@ public class ShortsRenderPlanBuilder {
                 .scenes(sceneRenderPlans)
                 .build();
 
-        log.info("Render planı oluşturuldu: {} sahne, ~{} saniye, müzik={}",
+        long voiceCount = sceneRenderPlans.stream()
+                .filter(s -> s.getVoiceoverPath() != null)
+                .count();
+
+        log.info("Render planı oluşturuldu: {} sahne, ~{} saniye, seslendirme={}/{}, müzik={}",
                 sceneRenderPlans.size(), plan.totalDurationSeconds(),
+                voiceCount, sceneRenderPlans.size(),
                 music != null ? music.getName() : "yok");
 
         return plan;
+    }
+
+    /**
+     * Seslendirme varsa MP3 süresine göre sahne süresini hesaplar.
+     * Seslendirme yoksa varsayılan süreyi kullanır.
+     */
+    private int calculateDuration(Path voicePath, int defaultDuration) {
+        if (voicePath == null) return defaultDuration;
+        try {
+            // MP3 dosya boyutundan tahmini süre (128kbps → 16KB/saniye)
+            long fileSize = java.nio.file.Files.size(voicePath);
+            int estimatedSeconds = (int) Math.ceil(fileSize / 16000.0);
+            // Minimum 3 saniye, seslendirme süresine 1 saniye ekle (nefes + geçiş)
+            return Math.max(3, estimatedSeconds + 1);
+        } catch (Exception e) {
+            return defaultDuration;
+        }
     }
 }

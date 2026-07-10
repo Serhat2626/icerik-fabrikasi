@@ -132,8 +132,27 @@ public class ShortsVideoRenderService {
             cmd.addAll(List.of("-f", "lavfi", "-i", gradientFilter));
         }
 
+        // Seslendirme varsa audio ekle
+        boolean hasVoice = scene.getVoiceoverPath() != null
+                && Files.exists(Path.of(scene.getVoiceoverPath()));
+
+        if (hasVoice) {
+            cmd.addAll(List.of("-i", scene.getVoiceoverPath()));
+        }
+
         cmd.addAll(List.of("-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"));
         cmd.addAll(List.of("-pix_fmt", "yuv420p"));
+
+        if (hasVoice) {
+            cmd.addAll(List.of("-c:a", "aac", "-b:a", "128k"));
+            cmd.addAll(List.of("-map", "0:v"));
+            // Ses input index: görsel varsa 1, lavfi ise 1
+            cmd.addAll(List.of("-map", hasImage ? "1:a" : "1:a"));
+            cmd.addAll(List.of("-shortest"));
+        } else {
+            cmd.addAll(List.of("-an"));
+        }
+
         cmd.addAll(List.of("-t", String.valueOf(dur)));
         cmd.add(outputPath.toString());
 
@@ -160,10 +179,28 @@ public class ShortsVideoRenderService {
         cmd.add("-y");
         cmd.addAll(List.of("-f", "concat", "-safe", "0", "-i", concatList.toString()));
 
+        // Seslendirme var mı kontrol et (en az bir sahne'de audio stream olmalı)
+        boolean hasVoiceover = plan.getScenes().stream()
+                .anyMatch(s -> s.getVoiceoverPath() != null);
+
         boolean hasMusic = plan.getBackgroundMusicPath() != null
                 && Files.exists(Path.of(plan.getBackgroundMusicPath()));
 
-        if (hasMusic) {
+        if (hasVoiceover && hasMusic) {
+            // Voiceover + müzik — ikisini mixle
+            cmd.addAll(List.of("-i", plan.getBackgroundMusicPath()));
+            cmd.addAll(List.of("-filter_complex",
+                    String.format("[0:a]volume=1.0[voice];[1:a]volume=%.2f,afade=t=out:st=%d:d=3[music];" +
+                                    "[voice][music]amix=inputs=2:duration=first[aout]",
+                            plan.getMusicVolume(),
+                            Math.max(1, plan.totalDurationSeconds() - 3))));
+            cmd.addAll(List.of("-map", "0:v", "-map", "[aout]"));
+            cmd.addAll(List.of("-shortest"));
+        } else if (hasVoiceover) {
+            // Sadece seslendirme — copy audio
+            cmd.addAll(List.of("-c:v", "copy", "-c:a", "aac"));
+        } else if (hasMusic) {
+            // Sadece müzik
             cmd.addAll(List.of("-i", plan.getBackgroundMusicPath()));
             cmd.addAll(List.of("-filter_complex",
                     String.format("[1:a]volume=%.2f,afade=t=out:st=%d:d=3[music]",
@@ -172,6 +209,7 @@ public class ShortsVideoRenderService {
             cmd.addAll(List.of("-map", "0:v", "-map", "[music]"));
             cmd.addAll(List.of("-shortest"));
         } else {
+            // Ne seslendirme ne müzik
             cmd.addAll(List.of("-c:v", "copy"));
             cmd.addAll(List.of("-an"));
         }

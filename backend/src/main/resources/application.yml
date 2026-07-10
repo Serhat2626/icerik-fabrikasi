@@ -55,3 +55,11 @@ jwt:
 
 pexels:
   api-key: REDACTED_SECRET
+
+# ElevenLabs Text-to-Speech
+# Hesap aç: https://elevenlabs.io → API key al → aşağıya yapıştır
+# Ses seç: https://elevenlabs.io/voice-library
+elevenlabs:
+  api-key: ${ELEVENLABS_API_KEY:}
+  voice-id: ${ELEVENLABS_VOICE_ID:pNInz6obpgDQGcFmaJgB}  # Adam - erkek, İngilizce
+  model: eleven_turbo_v2_5  # Hızlı + ucuz model
