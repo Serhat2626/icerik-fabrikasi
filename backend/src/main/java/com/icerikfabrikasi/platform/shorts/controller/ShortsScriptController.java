@@ -85,6 +85,7 @@ public class ShortsScriptController {
 
     @PostMapping("/{scriptId}/approve")
     @Operation(summary = "Script'i onayla — render'a hazır")
+    @Transactional
     public ResponseEntity<ApiResponse<ShortsScriptResponse>> approveScript(@PathVariable UUID scriptId) {
         ShortsScript script = shortsScriptService.approveScript(scriptId);
         return ResponseEntity.ok(ApiResponse.success(ShortsScriptResponse.from(script), "Script onaylandı — render'a hazır"));

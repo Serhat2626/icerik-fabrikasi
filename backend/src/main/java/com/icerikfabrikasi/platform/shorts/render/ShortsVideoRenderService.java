@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -16,7 +17,7 @@ import java.util.UUID;
  * Profesyonel kalitede Shorts video render servisi.
  *
  * <p>Her sahne için: gradient arka plan veya stock görsel + animasyonlu text overlay.
- * Sahneler arası crossfade geçiş + arka plan müzik.</p>
+ * Sahneler arası concat + arka plan müzik.</p>
  */
 @Service
 @Slf4j
@@ -64,7 +65,8 @@ public class ShortsVideoRenderService {
     }
 
     /**
-     * Tek sahne clip: solid arka plan + text overlay, fade geçiş.
+     * Tek sahne clip: solid arka plan + textfile overlay, fade geçiş.
+     * Text dosyaya yazılır — emoji/özel karakter sorununu önler.
      */
     private Path renderSceneClip(Path workDir, ShortsRenderPlan plan, SceneRenderPlan scene)
             throws IOException, InterruptedException {
@@ -72,10 +74,16 @@ public class ShortsVideoRenderService {
         Path outputPath = workDir.resolve(
                 String.format("scene_%03d.mp4", scene.getOrderIndex()));
 
+        // Text'i dosyaya yaz — FFmpeg'deki escape sorunlarını önler
+        String cleanText = sanitizeText(scene.getText());
+        Path textFile = workDir.resolve(String.format("text_%03d.txt", scene.getOrderIndex()));
+        Files.writeString(textFile, cleanText, StandardCharsets.UTF_8);
+
         int fontSize = scene.isHook() ? plan.getHookFontSize() : plan.getBodyFontSize();
         String textColor = hexToFfmpeg(scene.isHook() ? plan.getAccentColor() : plan.getTextColor());
         int dur = scene.getDurationSeconds();
         String bgColor = hexToFfmpeg(plan.getBackgroundColor());
+        int fadeOutStart = Math.max(1, dur - 1);
 
         boolean hasImage = scene.getBackgroundImagePath() != null
                 && Files.exists(Path.of(scene.getBackgroundImagePath()));
@@ -85,35 +93,21 @@ public class ShortsVideoRenderService {
         cmd.add("-y");
 
         if (hasImage) {
-            // Stock görsel → scale+crop 9:16, dark overlay + text
             cmd.addAll(List.of("-loop", "1", "-i", scene.getBackgroundImagePath()));
             cmd.addAll(List.of("-t", String.valueOf(dur)));
 
             String filter = String.format(
                     "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," +
                     "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.5:t=fill," +
-                    "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
+                    "drawtext=textfile='%s':fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
                     "shadowcolor=black@0.8:shadowx=3:shadowy=3," +
                     "fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
-                    escapeForDrawtext(scene.getText()), fontSize, textColor,
-                    Math.max(1, dur - 1)
+                    escapePathForFilter(textFile), fontSize, textColor, fadeOutStart
             );
-
-            // Watermark
-            if (plan.getWatermarkText() != null) {
-                filter = filter.replace(
-                        "fade=t=in:st=0:d=0.4,fade=t=out",
-                        String.format("drawtext=text='%s':fontsize=22:fontcolor=white@0.4:" +
-                                "x=(w-text_w)/2:y=h-th-60," +
-                                "fade=t=in:st=0:d=0.4,fade=t=out",
-                                escapeForDrawtext(plan.getWatermarkText()))
-                );
-            }
 
             cmd.addAll(List.of("-vf", filter));
         } else {
-            // Solid color arka plan + text
             cmd.addAll(List.of(
                     "-f", "lavfi", "-i",
                     String.format("color=c=%s:s=1080x1920:d=%d:r=%d",
@@ -121,24 +115,12 @@ public class ShortsVideoRenderService {
             ));
 
             String textFilter = String.format(
-                    "drawtext=text='%s':fontsize=%d:fontcolor=%s:" +
+                    "drawtext=textfile='%s':fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
-                    "shadowcolor=black@0.7:shadowx=2:shadowy=2",
-                    escapeForDrawtext(scene.getText()), fontSize, textColor
+                    "shadowcolor=black@0.7:shadowx=2:shadowy=2," +
+                    "fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
+                    escapePathForFilter(textFile), fontSize, textColor, fadeOutStart
             );
-
-            // Watermark
-            if (plan.getWatermarkText() != null) {
-                textFilter += String.format(
-                        ",drawtext=text='%s':fontsize=22:fontcolor=white@0.35:" +
-                        "x=(w-text_w)/2:y=h-th-60",
-                        escapeForDrawtext(plan.getWatermarkText())
-                );
-            }
-
-            // Fade in/out
-            textFilter += String.format(",fade=t=in:st=0:d=0.4,fade=t=out:st=%d:d=0.4",
-                    Math.max(1, dur - 1));
 
             cmd.addAll(List.of("-vf", textFilter));
         }
@@ -171,7 +153,6 @@ public class ShortsVideoRenderService {
         cmd.add("-y");
         cmd.addAll(List.of("-f", "concat", "-safe", "0", "-i", concatList.toString()));
 
-        // Arka plan müzik
         boolean hasMusic = plan.getBackgroundMusicPath() != null
                 && Files.exists(Path.of(plan.getBackgroundMusicPath()));
 
@@ -185,7 +166,7 @@ public class ShortsVideoRenderService {
             cmd.addAll(List.of("-shortest"));
         } else {
             cmd.addAll(List.of("-c:v", "copy"));
-            cmd.addAll(List.of("-an")); // no audio if no music
+            cmd.addAll(List.of("-an"));
         }
 
         cmd.addAll(List.of("-movflags", "+faststart"));
@@ -202,15 +183,17 @@ public class ShortsVideoRenderService {
     }
 
     private void executeCommand(List<String> command) throws IOException, InterruptedException {
-        log.debug("FFmpeg komutu: {}", String.join(" ", command));
+        log.info("FFmpeg komutu: {}", String.join(" ", command));
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true);
         Process process = pb.start();
         String output = new String(process.getInputStream().readAllBytes());
         int exitCode = process.waitFor();
         if (exitCode != 0) {
-            log.error("FFmpeg hata: exitCode={}, output={}", exitCode, output);
-            throw new RuntimeException("FFmpeg hatası (exit: " + exitCode + "): " + output.substring(0, Math.min(output.length(), 500)));
+            log.error("FFmpeg hata: exitCode={}, output={}", exitCode,
+                    output.substring(Math.max(0, output.length() - 800)));
+            throw new RuntimeException("FFmpeg hatası (exit: " + exitCode + "): " +
+                    output.substring(Math.max(0, output.length() - 400)));
         }
     }
 
@@ -219,10 +202,20 @@ public class ShortsVideoRenderService {
         return hex.replace("#", "0x");
     }
 
-    private String escapeForDrawtext(String text) {
+    /** Text'ten emoji ve sorunlu karakterleri temizle */
+    private String sanitizeText(String text) {
         if (text == null) return "";
-        return text.replace("\\", "\\\\").replace("'", "'\\''")
-                .replace(":", "\\:").replace("%", "%%")
-                .replace("\n", " ");
+        // Emoji ve non-ASCII karakterleri kaldır, sadece basit text bırak
+        return text.replaceAll("[^\\x20-\\x7E]", "")
+                   .replace("'", "'")
+                   .replace("\"", "'")
+                   .trim();
+    }
+
+    /** Windows path'ini FFmpeg filter için escape et */
+    private String escapePathForFilter(Path path) {
+        return path.toAbsolutePath().toString()
+                .replace("\\", "/")
+                .replace(":", "\\:");
     }
 }
