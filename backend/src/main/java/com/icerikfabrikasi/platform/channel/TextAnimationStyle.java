@@ -21,5 +21,8 @@ public enum TextAnimationStyle {
     TYPEWRITER,
 
     /** Animasyon yok — anında görünür */
-    NONE
+    NONE,
+
+    /** Metin zıplama efekti */
+    BOUNCE
 }
