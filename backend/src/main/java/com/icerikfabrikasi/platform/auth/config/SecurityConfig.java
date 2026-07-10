@@ -60,8 +60,10 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        // Admin endpoint'ler — kimlik doğrulama gerekli
-                        .requestMatchers("/api/admin/**").authenticated()
+                        // Dashboard static dosyaları
+                        .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/favicon.ico").permitAll()
+                        // Admin API — geliştirme aşamasında açık, production'da kapatılacak
+                        .requestMatchers("/api/admin/**").permitAll()
                         // Diğer tüm endpoint'ler — kimlik doğrulama gerekli
                         .anyRequest().authenticated()
                 )
