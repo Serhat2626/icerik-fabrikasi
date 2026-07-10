@@ -87,15 +87,44 @@ function renderChannelCard(channel, scripts) {
             </div>
 
             <div class="channel-actions" onclick="event.stopPropagation()">
-                <button class="btn btn-primary btn-sm" onclick="doBatchRender('${channel.id}', '${channel.name}')">
-                    🎬 Toplu Render
+                <button class="btn btn-warning btn-sm" onclick="doApproveAll('${channel.id}', '${channel.name}', ${draft})"
+                    ${draft === 0 ? 'disabled' : ''}>
+                    ✅ Hepsini Onayla (${draft})
                 </button>
-                <button class="btn btn-success btn-sm" onclick="doBatchPublish('${channel.id}', '${channel.name}')">
-                    📤 Toplu Yayınla
+                <button class="btn btn-primary btn-sm" onclick="doBatchRender('${channel.id}', '${channel.name}')"
+                    ${approved === 0 ? 'disabled' : ''}>
+                    🎬 Toplu Render (${approved})
+                </button>
+                <button class="btn btn-success btn-sm" onclick="doBatchPublish('${channel.id}', '${channel.name}')"
+                    ${rendered === 0 ? 'disabled' : ''}>
+                    📤 Toplu Yayınla (${rendered})
                 </button>
             </div>
         </div>
     `;
+}
+
+async function doApproveAll(channelId, name, count) {
+    if (!confirm(`"${name}" kanalının ${count} draft script'i onaylanacak. Devam?`)) return;
+    Toast.info('Script\'ler onaylanıyor...');
+    try {
+        const scriptsRes = await API.getScripts(channelId);
+        const drafts = scriptsRes.data.filter(s => s.status === 'DRAFT');
+        let ok = 0, fail = 0;
+        for (const script of drafts) {
+            try {
+                await API.approveScript(script.id);
+                ok++;
+            } catch (e) {
+                fail++;
+                console.warn('Approve hatası:', script.id, e);
+            }
+        }
+        Toast.success(`${ok}/${drafts.length} script onaylandı` + (fail > 0 ? `, ${fail} hata` : ''));
+        renderOverview();
+    } catch (err) {
+        Toast.error('Onaylama hatası: ' + err.message);
+    }
 }
 
 async function doBatchRender(channelId, name) {
