@@ -88,36 +88,46 @@ public class ShortsVideoRenderService {
         boolean hasImage = scene.getBackgroundImagePath() != null
                 && Files.exists(Path.of(scene.getBackgroundImagePath()));
 
+        boolean hasVoice = scene.getVoiceoverPath() != null
+                && Files.exists(Path.of(scene.getVoiceoverPath()));
+
         List<String> cmd = new ArrayList<>();
         cmd.add(ffmpegPath);
         cmd.add("-y");
 
         if (hasImage) {
-            // Arka plan: stock görsel + karartma overlay + modern text kutusu
-            cmd.addAll(List.of("-loop", "1", "-i", scene.getBackgroundImagePath()));
-            cmd.addAll(List.of("-t", String.valueOf(dur)));
+            // Input 0: arka plan görseli
+            cmd.addAll(List.of("-loop", "1", "-t", String.valueOf(dur), "-i", scene.getBackgroundImagePath()));
+        } else {
+            // Input 0: gradient arka plan
+            String gradientFilter = String.format(
+                    "color=c=%s:s=1080x1920:d=%d:r=%d,format=yuv420p",
+                    bgColor, dur, plan.getFps()
+            );
+            cmd.addAll(List.of("-f", "lavfi", "-t", String.valueOf(dur), "-i", gradientFilter));
+        }
 
-            // Filter: scale → crop 1080x1920 → karartma → text box → fade
-            String filter = String.format(
-                    "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," +
-                    // Yarı saydam karartma — text okunabilirliği için
+        // Input 1 (opsiyonel): seslendirme
+        if (hasVoice) {
+            cmd.addAll(List.of("-i", scene.getVoiceoverPath()));
+        }
+
+        // Video filtresi
+        String videoFilter;
+        if (hasImage) {
+            videoFilter = String.format(
+                    "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," +
                     "drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.6:t=fill," +
-                    // Text — kutu arka planlı modern görünüm
                     "drawtext=text='%s':" +
                     "fontsize=%d:fontcolor=%s:" +
                     "x=(w-text_w)/2:y=(h-text_h)/2:" +
                     "shadowcolor=black@0.9:shadowx=3:shadowy=3:" +
                     "line_spacing=14," +
-                    // Fade in/out
                     "fade=t=in:st=0:d=0.5,fade=t=out:st=%d:d=0.5",
                     escapedText, fontSize, textColor, fadeOutStart
             );
-
-            cmd.addAll(List.of("-vf", filter));
         } else {
-            // Gradient arka plan
-            String gradientFilter = String.format(
-                    "color=c=%s:s=1080x1920:d=%d:r=%d,format=yuv420p," +
+            videoFilter = String.format(
                     "drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.3:t=fill," +
                     "drawtext=text='%s':" +
                     "fontsize=%d:fontcolor=%s:" +
@@ -125,29 +135,17 @@ public class ShortsVideoRenderService {
                     "shadowcolor=black@0.7:shadowx=2:shadowy=2:" +
                     "line_spacing=14," +
                     "fade=t=in:st=0:d=0.5,fade=t=out:st=%d:d=0.5",
-                    bgColor, dur, plan.getFps(),
                     escapedText, fontSize, textColor, fadeOutStart
             );
-
-            cmd.addAll(List.of("-f", "lavfi", "-i", gradientFilter));
         }
 
-        // Seslendirme varsa audio ekle
-        boolean hasVoice = scene.getVoiceoverPath() != null
-                && Files.exists(Path.of(scene.getVoiceoverPath()));
-
-        if (hasVoice) {
-            cmd.addAll(List.of("-i", scene.getVoiceoverPath()));
-        }
-
+        cmd.addAll(List.of("-vf", videoFilter));
         cmd.addAll(List.of("-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"));
         cmd.addAll(List.of("-pix_fmt", "yuv420p"));
 
         if (hasVoice) {
             cmd.addAll(List.of("-c:a", "aac", "-b:a", "128k"));
-            cmd.addAll(List.of("-map", "0:v"));
-            // Ses input index: görsel varsa 1, lavfi ise 1
-            cmd.addAll(List.of("-map", hasImage ? "1:a" : "1:a"));
+            cmd.addAll(List.of("-map", "0:v", "-map", "1:a"));
             cmd.addAll(List.of("-shortest"));
         } else {
             cmd.addAll(List.of("-an"));
