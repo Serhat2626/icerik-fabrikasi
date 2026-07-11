@@ -61,3 +61,7 @@ elevenlabs:
   api-key: REDACTED_ELEVENLABS_API_KEY
   voice-id: ${ELEVENLABS_VOICE_ID:pNInz6obpgDQGcFmaJgB}  # Adam - erkek, İngilizce
   model: eleven_turbo_v2_5  # Hızlı + ucuz model
+
+fal:
+  api-key: REDACTED_FAL_API_KEY
+  model: fal-ai/flux-pro/v1.1

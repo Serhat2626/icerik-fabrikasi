@@ -1,6 +1,5 @@
 package com.icerikfabrikasi.platform.shorts.media;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -12,60 +11,100 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.UUID;
 
 /**
- * Sahne görsel ipucuna göre stock fotoğraf indiren servis.
+ * Sahne görsel ipucuna göre arka plan görseli sağlayan servis.
  *
- * <p>visualHint → Pexels arama → fotoğraf indir → lokal dosya yolu döndür</p>
+ * <p>Öncelik sırası:
+ * <ol>
+ *   <li>AI görsel üretimi (fal.ai Flux Pro) — en kaliteli</li>
+ *   <li>Stock fotoğraf (Pexels) — fallback</li>
+ *   <li>Düz renk arka plan — son çare</li>
+ * </ol></p>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SceneBackgroundService {
 
     private final StockMediaGateway stockMediaGateway;
+    private final FalAiImageGateway falAiGateway;
+    private final AiScenePromptBuilder promptBuilder;
+
+    public SceneBackgroundService(
+            StockMediaGateway stockMediaGateway,
+            @org.springframework.lang.Nullable FalAiImageGateway falAiGateway,
+            AiScenePromptBuilder promptBuilder) {
+        this.stockMediaGateway = stockMediaGateway;
+        this.falAiGateway = falAiGateway;
+        this.promptBuilder = promptBuilder;
+    }
 
     @Value("${shorts.media.cache-dir:${java.io.tmpdir}/shorts-media-cache}")
     private String cacheDir;
 
     /**
-     * Sahne için arka plan görseli bulur ve indirir.
+     * Sahne için arka plan görseli üretir/bulur.
      *
-     * @param visualHint Görsel ipucu — örn: "luxury lifestyle overview"
-     * @return İndirilen dosyanın yolu veya null (bulunamazsa)
+     * @param visualHint Görsel ipucu
+     * @param sceneText Sahne metni (AI prompt için)
+     * @param sceneIndex Sahne index
+     * @param isHook Hook sahnesi mi
+     * @return Görsel dosya yolu veya null
+     */
+    public Path resolveBackground(String visualHint, String sceneText, int sceneIndex, boolean isHook) {
+        // 1. AI görsel üretimi dene
+        Path aiImage = tryAiGeneration(sceneText, visualHint, sceneIndex, isHook);
+        if (aiImage != null) return aiImage;
+
+        // 2. Pexels stock fotoğraf fallback
+        Path stockImage = tryStockPhoto(visualHint);
+        if (stockImage != null) return stockImage;
+
+        log.info("Görsel bulunamadı — düz renk arka plan kullanılacak: scene={}", sceneIndex);
+        return null;
+    }
+
+    /**
+     * Eski API uyumluluğu — sadece visualHint ile çağrılınca Pexels dener.
      */
     public Path resolveBackground(String visualHint) {
+        return tryStockPhoto(visualHint);
+    }
+
+    private Path tryAiGeneration(String sceneText, String visualHint, int sceneIndex, boolean isHook) {
+        if (falAiGateway == null) return null;
+
+        try {
+            String prompt = promptBuilder.buildPrompt(sceneText, visualHint, isHook);
+            return falAiGateway.generateImage(prompt, sceneIndex);
+        } catch (Exception e) {
+            log.warn("AI görsel üretimi başarısız, Pexels'e geçiliyor: scene={}, hata={}",
+                    sceneIndex, e.getMessage());
+            return null;
+        }
+    }
+
+    private Path tryStockPhoto(String visualHint) {
         if (visualHint == null || visualHint.isBlank()) {
-            log.debug("Görsel ipucu boş — düz renk arka plan kullanılacak");
             return null;
         }
 
         try {
-            // 1. Stock fotoğraf ara
             StockMediaItem item = stockMediaGateway.findPortraitPhoto(visualHint);
             if (item == null || item.getUrl() == null) {
-                log.info("Stock fotoğraf bulunamadı: hint='{}'", visualHint);
                 return null;
             }
 
-            // 2. Daha önce indirilmişse cache'ten döndür
             Path dir = Path.of(cacheDir);
             Files.createDirectories(dir);
             Path cached = dir.resolve(item.getExternalId() + ".jpg");
             if (Files.exists(cached) && Files.size(cached) > 1000) {
-                log.info("Arka plan cache'ten yüklendi: hint='{}', path={}", visualHint, cached);
                 return cached;
             }
 
-            // 3. İndir (header ile — Pexels 403 sorunu fix)
-            Path downloadPath = downloadImage(item.getUrl(), cached);
-            log.info("Arka plan görseli indirildi: hint='{}', source={}, path={}",
-                    visualHint, item.getSource(), downloadPath);
-            return downloadPath;
-
+            return downloadImage(item.getUrl(), cached);
         } catch (Exception e) {
-            log.warn("Arka plan görseli indirme hatası: hint='{}', hata={}", visualHint, e.getMessage());
+            log.warn("Stock fotoğraf indirme hatası: hint='{}', hata={}", visualHint, e.getMessage());
             return null;
         }
     }

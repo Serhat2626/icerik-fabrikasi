@@ -55,7 +55,8 @@ public class ShortsRenderPlanBuilder {
         int voiceIdx = 0;
 
         // Hook sahnesi
-        Path hookBg = backgroundService.resolveBackground("dramatic dark background finance");
+        Path hookBg = backgroundService.resolveBackground(
+                "dramatic dark background finance", script.getHook(), 0, true);
         Path hookVoice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
         int hookDuration = calculateDuration(hookVoice, 4);
 
@@ -70,7 +71,8 @@ public class ShortsRenderPlanBuilder {
 
         // İçerik sahneleri
         for (ShortsScriptScene scene : script.getScenes()) {
-            Path bg = backgroundService.resolveBackground(scene.getVisualHint());
+            Path bg = backgroundService.resolveBackground(
+                    scene.getVisualHint(), scene.getText(), scene.getOrderIndex() + 1, false);
             Path voice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
             int duration = calculateDuration(voice, scene.getDurationSeconds());
 
