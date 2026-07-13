@@ -41,7 +41,7 @@ public class ShortsRenderOrchestrator {
      * @throws IllegalStateException Script APPROVED durumunda değilse
      */
     public ShortsRenderResult renderScript(UUID scriptId) {
-        ShortsScript script = scriptService.getScript(scriptId);
+        ShortsScript script = scriptService.getScriptWithScenes(scriptId);
 
         // Guard: sadece onaylanmış script'ler render edilebilir
         if (script.getStatus() != ShortsScriptStatus.APPROVED) {

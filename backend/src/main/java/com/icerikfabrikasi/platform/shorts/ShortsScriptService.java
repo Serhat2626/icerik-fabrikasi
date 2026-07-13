@@ -117,6 +117,16 @@ public class ShortsScriptService {
     }
 
     /**
+     * Script'i sahneleriyle birlikte eager yükler.
+     * Transaction dışında kullanım için (render gibi uzun işlemler).
+     */
+    @Transactional(readOnly = true)
+    public ShortsScript getScriptWithScenes(UUID scriptId) {
+        return scriptRepository.findByIdWithScenes(scriptId)
+                .orElseThrow(() -> new NotFoundException("Script", scriptId));
+    }
+
+    /**
      * Render tamamlandıktan sonra script'i RENDERED durumuna geçirir.
      * Taze DB bağlantısı ile çalışır — uzun render süresinden bağımsız.
      */
