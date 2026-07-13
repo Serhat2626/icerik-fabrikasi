@@ -23,7 +23,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@Transactional
 public class ShortsRenderOrchestrator {
 
     private final ShortsScriptService scriptService;
@@ -33,6 +32,9 @@ public class ShortsRenderOrchestrator {
 
     /**
      * Onaylanmış bir script'i video olarak render eder.
+     *
+     * <p>NOT: @Transactional yok — render uzun sürdüğü için (AI görseller + TTS + FFmpeg)
+     * DB bağlantısı timeout olur. Sonuç kaydetme kısa transaction ile yapılır.</p>
      *
      * @param scriptId Render edilecek script ID
      * @return Render sonucu
@@ -53,17 +55,15 @@ public class ShortsRenderOrchestrator {
         log.info("Script render başlıyor: scriptId={}, title={}, channel={}",
                 scriptId, script.getTitle(), channel.getName());
 
-        // 1. Render planı oluştur
+        // 1. Render planı oluştur (AI görseller + TTS — uzun sürer)
         ShortsRenderPlan plan = planBuilder.buildPlan(script, channel);
 
         // 2. FFmpeg ile render et
         ShortsRenderResult result = renderService.render(plan);
 
-        // 3. Sonucu kaydet
+        // 3. Sonucu kaydet (kısa işlem — taze connection alır)
         if (result.isSuccess()) {
-            script.setStatus(ShortsScriptStatus.RENDERED);
-            script.setRenderOutputPath(result.getOutputPath());
-            channel.incrementVideosProduced();
+            scriptService.markRendered(scriptId, result.getOutputPath());
 
             log.info("Script render başarılı: scriptId={}, output={}, size={}KB",
                     scriptId, result.getOutputPath(), result.getFileSizeBytes() / 1024);

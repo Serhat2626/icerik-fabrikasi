@@ -71,17 +71,13 @@ public class FalAiImageGateway {
         try {
             // fal.ai API çağrısı
             FalResponse response = restClient.post()
-                    .uri("/{model}", model)
+                    .uri(URI.create(FAL_RUN_URL + "/" + model))
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
                             "prompt", prompt,
-                            "image_size", Map.of(
-                                    "width", 1080,
-                                    "height", 1920
-                            ),
-                            "num_inference_steps", 4,
+                            "image_size", "portrait_16_9",
                             "num_images", 1,
-                            "enable_safety_checker", false
+                            "safety_tolerance", "5"
                     ))
                     .retrieve()
                     .body(FalResponse.class);

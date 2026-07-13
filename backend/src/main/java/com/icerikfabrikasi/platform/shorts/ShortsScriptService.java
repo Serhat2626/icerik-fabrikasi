@@ -117,6 +117,19 @@ public class ShortsScriptService {
     }
 
     /**
+     * Render tamamlandıktan sonra script'i RENDERED durumuna geçirir.
+     * Taze DB bağlantısı ile çalışır — uzun render süresinden bağımsız.
+     */
+    public void markRendered(UUID scriptId, String outputPath) {
+        ShortsScript script = getScript(scriptId);
+        script.setStatus(ShortsScriptStatus.RENDERED);
+        script.setRenderOutputPath(outputPath);
+        script.getChannel().incrementVideosProduced();
+        scriptRepository.save(script);
+        log.info("Script durumu RENDERED olarak güncellendi: scriptId={}", scriptId);
+    }
+
+    /**
      * Sahne input record'u.
      */
     public record SceneInput(String text, String visualHint, int durationSeconds) {}
