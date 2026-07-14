@@ -76,6 +76,11 @@ public class ShortsVideoRenderService {
     private Path renderSceneClip(Path workDir, ShortsRenderPlan plan, SceneRenderPlan scene)
             throws IOException, InterruptedException {
 
+        // Countdown sahnesi ise özel render
+        if (scene.isCountdown()) {
+            return renderCountdownClip(workDir, plan, scene);
+        }
+
         Path outputPath = workDir.resolve(
                 String.format("scene_%03d.mp4", scene.getOrderIndex()));
 
@@ -260,6 +265,86 @@ public class ShortsVideoRenderService {
 
         executeCommand(cmd);
         return finalOutput;
+    }
+
+    /**
+     * Countdown sahnesi render — 3... 2... 1... animasyonlu.
+     * Her rakam 1 saniye gösterilir, büyük font, dramatik.
+     */
+    private Path renderCountdownClip(Path workDir, ShortsRenderPlan plan, SceneRenderPlan scene)
+            throws IOException, InterruptedException {
+
+        Path outputPath = workDir.resolve(
+                String.format("scene_%03d.mp4", scene.getOrderIndex()));
+
+        int dur = 4; // 3 + 2 + 1 + kısa bekleme
+        String bgColor = hexToFfmpeg(plan.getBackgroundColor());
+        String fontName = "Segoe UI Bold";
+        int countdownFontSize = 120;
+
+        boolean hasImage = scene.getBackgroundImagePath() != null
+                && Files.exists(Path.of(scene.getBackgroundImagePath()));
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add(ffmpegPath);
+        cmd.add("-y");
+
+        if (hasImage) {
+            cmd.addAll(List.of("-loop", "1", "-t", String.valueOf(dur), "-i", scene.getBackgroundImagePath()));
+        } else {
+            String gradientFilter = String.format(
+                    "color=c=%s:s=1080x1920:d=%d:r=%d,format=yuv420p",
+                    bgColor, dur, plan.getFps()
+            );
+            cmd.addAll(List.of("-f", "lavfi", "-t", String.valueOf(dur), "-i", gradientFilter));
+        }
+
+        // Countdown filter: 3 → 2 → 1 her biri 1 saniye, son 1 sn boş
+        StringBuilder filter = new StringBuilder();
+        if (hasImage) {
+            filter.append("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,");
+            filter.append("drawbox=x=0:y=660:w=iw:h=600:color=black@0.6:t=fill,");
+        }
+
+        // "3" — 0-1 saniye
+        filter.append(String.format(
+                "drawtext=text='3':font='%s':fontsize=%d:fontcolor=white:" +
+                "borderw=4:bordercolor=black@0.9:" +
+                "x=(w-text_w)/2:y=(h-text_h)/2:" +
+                "enable='between(t,0,1)',",
+                fontName, countdownFontSize
+        ));
+
+        // "2" — 1-2 saniye
+        filter.append(String.format(
+                "drawtext=text='2':font='%s':fontsize=%d:fontcolor=white:" +
+                "borderw=4:bordercolor=black@0.9:" +
+                "x=(w-text_w)/2:y=(h-text_h)/2:" +
+                "enable='between(t,1,2)',",
+                fontName, countdownFontSize
+        ));
+
+        // "1" — 2-3 saniye
+        filter.append(String.format(
+                "drawtext=text='1':font='%s':fontsize=%d:fontcolor=white:" +
+                "borderw=4:bordercolor=black@0.9:" +
+                "x=(w-text_w)/2:y=(h-text_h)/2:" +
+                "enable='between(t,2,3)',",
+                fontName, countdownFontSize
+        ));
+
+        // Fade in/out
+        filter.append("fade=t=in:st=0:d=0.3,fade=t=out:st=3:d=0.5");
+
+        cmd.addAll(List.of("-vf", filter.toString()));
+        cmd.addAll(List.of("-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"));
+        cmd.addAll(List.of("-pix_fmt", "yuv420p"));
+        cmd.addAll(List.of("-an"));
+        cmd.addAll(List.of("-t", String.valueOf(dur)));
+        cmd.add(outputPath.toString());
+
+        executeCommand(cmd);
+        return outputPath;
     }
 
     private Path prepareWorkDir() throws IOException {

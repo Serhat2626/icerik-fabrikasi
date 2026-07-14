@@ -69,21 +69,41 @@ public class ShortsRenderPlanBuilder {
                 .isHook(true)
                 .build());
 
-        // İçerik sahneleri
+        // İçerik sahneleri — soru sahnelerinden sonra countdown enjekte et
+        String lastBgPath = hookBg != null ? hookBg.toString() : null;
+
         for (ShortsScriptScene scene : script.getScenes()) {
             Path bg = backgroundService.resolveBackground(
-                    scene.getVisualHint(), scene.getText(), scene.getOrderIndex() + 1, false);
+                    scene.getVisualHint(), scene.getText(), sceneRenderPlans.size(), false);
             Path voice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
             int duration = calculateDuration(voice, scene.getDurationSeconds());
 
+            String bgPath = bg != null ? bg.toString() : null;
             sceneRenderPlans.add(ShortsRenderPlan.SceneRenderPlan.builder()
-                    .orderIndex(scene.getOrderIndex() + 1)
+                    .orderIndex(sceneRenderPlans.size())
                     .text(scene.getText())
-                    .backgroundImagePath(bg != null ? bg.toString() : null)
+                    .backgroundImagePath(bgPath)
                     .voiceoverPath(voice != null ? voice.toString() : null)
                     .durationSeconds(duration)
                     .isHook(false)
                     .build());
+
+            lastBgPath = bgPath != null ? bgPath : lastBgPath;
+
+            // Soru sahnesi tespit et — cevaptan önce countdown ekle
+            if (isQuestionScene(scene.getText())) {
+                log.info("Soru sahnesi tespit edildi, countdown ekleniyor: '{}'",
+                        scene.getText().substring(0, Math.min(40, scene.getText().length())));
+
+                sceneRenderPlans.add(ShortsRenderPlan.SceneRenderPlan.builder()
+                        .orderIndex(sceneRenderPlans.size())
+                        .text("3... 2... 1...")
+                        .backgroundImagePath(lastBgPath)
+                        .durationSeconds(4)
+                        .isHook(false)
+                        .isCountdown(true)
+                        .build());
+            }
         }
 
         // CTA sahnesi
@@ -145,5 +165,20 @@ public class ShortsRenderPlanBuilder {
         } catch (Exception e) {
             return defaultDuration;
         }
+    }
+
+    /**
+     * Sahne metninin bir soru olup olmadığını tespit eder.
+     * Soru cümleleri: "?", "guess", "what is", "do you know" vb.
+     */
+    private boolean isQuestionScene(String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase().trim();
+        return lower.contains("?")
+                || lower.contains("guess")
+                || lower.contains("can you name")
+                || lower.contains("do you know")
+                || lower.contains("what is")
+                || lower.contains("what do you think");
     }
 }

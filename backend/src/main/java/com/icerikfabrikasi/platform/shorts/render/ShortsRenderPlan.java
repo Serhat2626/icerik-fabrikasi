@@ -85,5 +85,9 @@ public class ShortsRenderPlan {
 
         /** Bu sahne hook mu? (farklı stil uygulanır) */
         boolean isHook;
+
+        /** Bu sahne countdown mu? (3... 2... 1... animasyonu) */
+        @Builder.Default
+        boolean isCountdown = false;
     }
 }
