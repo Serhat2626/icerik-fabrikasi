@@ -32,7 +32,7 @@ public class ShortsVideoRenderService {
      * 1080px genişlik, fontsize=38 → ~20 karakter/satır güvenli.
      * Padding bırakarak taşmayı önler.
      */
-    private static final int MAX_CHARS_PER_LINE = 22;
+    private static final int MAX_CHARS_PER_LINE = 18;
 
     public ShortsRenderResult render(ShortsRenderPlan plan) {
         log.info("Shorts video render başlıyor: {} sahne, ~{} saniye",
@@ -82,7 +82,7 @@ public class ShortsVideoRenderService {
         String cleanText = sanitizeText(scene.getText());
         String wrappedText = wrapText(cleanText, MAX_CHARS_PER_LINE);
 
-        int fontSize = scene.isHook() ? 46 : 38;
+        int fontSize = scene.isHook() ? 58 : 48;
         int dur = scene.getDurationSeconds();
         String bgColor = hexToFfmpeg(plan.getBackgroundColor());
         int fadeOutStart = Math.max(1, dur - 1);
@@ -138,31 +138,37 @@ public class ShortsVideoRenderService {
 
     /**
      * Modern text overlay filter:
-     * - Görsel arka planda: alt kısımda gradient karartma + beyaz text
-     * - Düz arka planda: ortada text
+     * - Büyük, modern font (Segoe UI Bold)
+     * - Ekranın merkezinde konumlandırma — yazı ana odak
+     * - Yarı-saydam arka plan kutusu ile okunabilirlik
      */
     private String buildVideoFilter(String wrappedText, int fontSize, int dur,
                                      int fadeOutStart, boolean hasImage, String bgColor, int fps) {
-        // Satırları ayrı drawtext olarak ekle — FFmpeg \n desteği sorunlu
         String[] lines = wrappedText.split("\n");
         StringBuilder filter = new StringBuilder();
 
+        // Font adıyla belirt — fontfile path escape sorunları önlenir
+        String fontName = "Segoe UI Bold";
+
         if (hasImage) {
-            // Görsel: scale + crop + alt kısımda gradient karartma
+            // Görsel: scale + crop
             filter.append("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,");
 
-            // Alt kısımda gradient black overlay (y=1200'den aşağısı)
-            filter.append("drawbox=x=0:y=1100:w=iw:h=820:color=black@0.55:t=fill,");
+            // Ekranın ortasında geniş yarı-saydam karartma alanı
+            int boxHeight = (lines.length * (fontSize + 20)) + 120;
+            int boxY = 960 - (boxHeight / 2);
+            filter.append(String.format(
+                    "drawbox=x=0:y=%d:w=iw:h=%d:color=black@0.5:t=fill,",
+                    boxY, boxHeight
+            ));
         } else {
-            // Düz arka plan — orta bölgede hafif kutu
-            filter.append("drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.3:t=fill,");
+            filter.append("drawbox=x=0:y=ih/2-300:w=iw:h=600:color=black@0.3:t=fill,");
         }
 
-        // Her satır için ayrı drawtext — taşma ve \n sorunu olmaz
+        // Her satır için ayrı drawtext — ekranın merkezine yerleştir
         int totalLines = lines.length;
-        int lineSpacing = fontSize + 16; // satır aralığı
-        // Konumlandırma: görsel varsa alt kısımda (y=1250 civarı), yoksa ortada
-        int baseY = hasImage ? 1280 : 960;
+        int lineSpacing = fontSize + 20;
+        int baseY = 960; // Ekranın tam ortası (1920/2)
         int startY = baseY - (totalLines * lineSpacing / 2);
 
         for (int i = 0; i < lines.length; i++) {
@@ -171,13 +177,14 @@ public class ShortsVideoRenderService {
 
             filter.append(String.format(
                     "drawtext=text='%s':" +
+                    "font='%s':" +
                     "fontsize=%d:" +
                     "fontcolor=white:" +
-                    "borderw=2:bordercolor=black@0.8:" +
+                    "borderw=3:bordercolor=black@0.9:" +
                     "x=(w-text_w)/2:" +
                     "y=%d:" +
-                    "shadowcolor=black@0.6:shadowx=2:shadowy=2",
-                    escapedLine, fontSize, y
+                    "shadowcolor=black@0.5:shadowx=3:shadowy=3",
+                    escapedLine, fontName, fontSize, y
             ));
 
             if (i < lines.length - 1) {
