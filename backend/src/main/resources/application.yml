@@ -59,8 +59,8 @@ pexels:
 # ElevenLabs Text-to-Speech
 elevenlabs:
   api-key: REDACTED_ELEVENLABS_API_KEY
-  voice-id: ${ELEVENLABS_VOICE_ID:pNInz6obpgDQGcFmaJgB}  # Adam - erkek, İngilizce
-  model: eleven_turbo_v2_5  # Hızlı + ucuz model
+  voice-id: ${ELEVENLABS_VOICE_ID:TxGEqnHWrfWFTfGW9XjX}  # Josh - genç, enerjik, dinamik erkek
+  model: eleven_multilingual_v2  # Daha kaliteli ses
 
 fal:
   api-key: REDACTED_FAL_API_KEY

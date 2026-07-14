@@ -15,7 +15,7 @@ import java.util.UUID;
 /**
  * Profesyonel kalitede Shorts video render servisi.
  *
- * <p>Her sahne için: stock görsel arka plan + karartma + modern text kutusu.
+ * <p>Her sahne için: AI arka plan görsel + yarı-saydam kutu + modern beyaz text.
  * Sahneler arası concat + arka plan müzik.</p>
  */
 @Service
@@ -28,7 +28,11 @@ public class ShortsVideoRenderService {
     @Value("${shorts.render.ffmpeg-path:ffmpeg}")
     private String ffmpegPath;
 
-    private static final int MAX_CHARS_PER_LINE = 26;
+    /**
+     * 1080px genişlik, fontsize=38 → ~20 karakter/satır güvenli.
+     * Padding bırakarak taşmayı önler.
+     */
+    private static final int MAX_CHARS_PER_LINE = 22;
 
     public ShortsRenderResult render(ShortsRenderPlan plan) {
         log.info("Shorts video render başlıyor: {} sahne, ~{} saniye",
@@ -66,8 +70,8 @@ public class ShortsVideoRenderService {
 
     /**
      * Tek sahne clip:
-     * - Arka plan görsel varsa: görsel + karartma + text kutusu
-     * - Yoksa: gradient arka plan + text
+     * - Arka plan görsel varsa: görsel + alt bölgede gradient karartma + modern text
+     * - Yoksa: koyu arka plan + text
      */
     private Path renderSceneClip(Path workDir, ShortsRenderPlan plan, SceneRenderPlan scene)
             throws IOException, InterruptedException {
@@ -77,10 +81,8 @@ public class ShortsVideoRenderService {
 
         String cleanText = sanitizeText(scene.getText());
         String wrappedText = wrapText(cleanText, MAX_CHARS_PER_LINE);
-        String escapedText = escapeForDrawtext(wrappedText);
 
-        int fontSize = scene.isHook() ? 52 : 42;
-        String textColor = scene.isHook() ? "0xFFD700" : "0xFFFFFF";
+        int fontSize = scene.isHook() ? 46 : 38;
         int dur = scene.getDurationSeconds();
         String bgColor = hexToFfmpeg(plan.getBackgroundColor());
         int fadeOutStart = Math.max(1, dur - 1);
@@ -112,32 +114,8 @@ public class ShortsVideoRenderService {
             cmd.addAll(List.of("-i", scene.getVoiceoverPath()));
         }
 
-        // Video filtresi
-        String videoFilter;
-        if (hasImage) {
-            videoFilter = String.format(
-                    "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," +
-                    "drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.6:t=fill," +
-                    "drawtext=text='%s':" +
-                    "fontsize=%d:fontcolor=%s:" +
-                    "x=(w-text_w)/2:y=(h-text_h)/2:" +
-                    "shadowcolor=black@0.9:shadowx=3:shadowy=3:" +
-                    "line_spacing=14," +
-                    "fade=t=in:st=0:d=0.5,fade=t=out:st=%d:d=0.5",
-                    escapedText, fontSize, textColor, fadeOutStart
-            );
-        } else {
-            videoFilter = String.format(
-                    "drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.3:t=fill," +
-                    "drawtext=text='%s':" +
-                    "fontsize=%d:fontcolor=%s:" +
-                    "x=(w-text_w)/2:y=(h-text_h)/2:" +
-                    "shadowcolor=black@0.7:shadowx=2:shadowy=2:" +
-                    "line_spacing=14," +
-                    "fade=t=in:st=0:d=0.5,fade=t=out:st=%d:d=0.5",
-                    escapedText, fontSize, textColor, fadeOutStart
-            );
-        }
+        // Video filtresi — modern text overlay
+        String videoFilter = buildVideoFilter(wrappedText, fontSize, dur, fadeOutStart, hasImage, bgColor, plan.getFps());
 
         cmd.addAll(List.of("-vf", videoFilter));
         cmd.addAll(List.of("-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"));
@@ -156,6 +134,64 @@ public class ShortsVideoRenderService {
 
         executeCommand(cmd);
         return outputPath;
+    }
+
+    /**
+     * Modern text overlay filter:
+     * - Görsel arka planda: alt kısımda gradient karartma + beyaz text
+     * - Düz arka planda: ortada text
+     */
+    private String buildVideoFilter(String wrappedText, int fontSize, int dur,
+                                     int fadeOutStart, boolean hasImage, String bgColor, int fps) {
+        // Satırları ayrı drawtext olarak ekle — FFmpeg \n desteği sorunlu
+        String[] lines = wrappedText.split("\n");
+        StringBuilder filter = new StringBuilder();
+
+        if (hasImage) {
+            // Görsel: scale + crop + alt kısımda gradient karartma
+            filter.append("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,");
+
+            // Alt kısımda gradient black overlay (y=1200'den aşağısı)
+            filter.append("drawbox=x=0:y=1100:w=iw:h=820:color=black@0.55:t=fill,");
+        } else {
+            // Düz arka plan — orta bölgede hafif kutu
+            filter.append("drawbox=x=0:y=ih/2-200:w=iw:h=400:color=black@0.3:t=fill,");
+        }
+
+        // Her satır için ayrı drawtext — taşma ve \n sorunu olmaz
+        int totalLines = lines.length;
+        int lineSpacing = fontSize + 16; // satır aralığı
+        // Konumlandırma: görsel varsa alt kısımda (y=1250 civarı), yoksa ortada
+        int baseY = hasImage ? 1280 : 960;
+        int startY = baseY - (totalLines * lineSpacing / 2);
+
+        for (int i = 0; i < lines.length; i++) {
+            String escapedLine = escapeForDrawtext(lines[i].trim());
+            int y = startY + (i * lineSpacing);
+
+            filter.append(String.format(
+                    "drawtext=text='%s':" +
+                    "fontsize=%d:" +
+                    "fontcolor=white:" +
+                    "borderw=2:bordercolor=black@0.8:" +
+                    "x=(w-text_w)/2:" +
+                    "y=%d:" +
+                    "shadowcolor=black@0.6:shadowx=2:shadowy=2",
+                    escapedLine, fontSize, y
+            ));
+
+            if (i < lines.length - 1) {
+                filter.append(",");
+            }
+        }
+
+        // Fade in/out
+        filter.append(String.format(
+                ",fade=t=in:st=0:d=0.5,fade=t=out:st=%d:d=0.5",
+                fadeOutStart
+        ));
+
+        return filter.toString();
     }
 
     /**
@@ -262,11 +298,12 @@ public class ShortsVideoRenderService {
         return text
                 .replace("\\", "\\\\")
                 .replace(":", "\\:")
-                .replace("\n", "\\n");
+                .replace("'", "\\'");
     }
 
     /**
-     * Uzun text'i satırlara böler (FFmpeg drawtext \n desteği).
+     * Uzun text'i satırlara böler.
+     * Her satır maxChars'ı geçmez — ekran taşması önlenir.
      */
     private String wrapText(String text, int maxChars) {
         if (text == null || text.length() <= maxChars) return text;

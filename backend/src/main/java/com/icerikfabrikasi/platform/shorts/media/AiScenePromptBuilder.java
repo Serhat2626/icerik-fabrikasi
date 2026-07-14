@@ -5,9 +5,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Sahne metni ve görsel ipucundan AI görsel üretimi için
- * yüksek kaliteli prompt oluşturur.
+ * yüksek kaliteli, sahneye özel prompt oluşturur.
  *
- * <p>Shorts video'ya uygun: dikey, sinematik, ilgi çekici görseller.</p>
+ * <p>Strateji: Sahne metnini doğrudan prompt'a dahil et,
+ * böylece Flux Pro o cümleyi görsel olarak anlatır.</p>
  */
 @Component
 @Slf4j
@@ -15,100 +16,64 @@ public class AiScenePromptBuilder {
 
     /**
      * Sahne için AI görsel prompt'u oluşturur.
-     *
-     * @param sceneText Sahne metni (örn: "Rule 1: Pay yourself first")
-     * @param visualHint Görsel ipucu (örn: "money jar savings")
-     * @param isHook Hook sahnesi mi?
-     * @return Detaylı İngilizce görsel prompt
+     * Sahne metnini doğrudan görsel açıklamaya dönüştürür.
      */
     public String buildPrompt(String sceneText, String visualHint, boolean isHook) {
-        String baseContext = extractVisualContext(sceneText, visualHint);
+        // visualHint varsa ve detaylıysa onu kullan, yoksa text'ten üret
+        String subject = buildSubject(sceneText, visualHint);
 
         if (isHook) {
             return String.format(
-                    "Dramatic cinematic vertical photo, %s, " +
-                    "dark moody dramatic lighting with golden highlights, " +
-                    "ultra sharp focus, shallow depth of field, " +
-                    "professional photography, 9:16 portrait orientation, " +
-                    "bold and eye-catching composition, Instagram viral aesthetic, " +
-                    "no text no letters no words no watermark",
-                    baseContext
+                    "A stunning photorealistic image illustrating the concept: \"%s\". " +
+                    "Dramatic cinematic lighting, dark moody atmosphere with golden warm highlights. " +
+                    "Ultra detailed, 8K quality, shallow depth of field, " +
+                    "professional commercial photography style. " +
+                    "Vertical 9:16 portrait orientation. " +
+                    "No text, no letters, no words, no watermark, no UI elements.",
+                    subject
             );
         }
 
         return String.format(
-                "Cinematic vertical photo, %s, " +
-                "professional studio lighting, rich colors, " +
-                "sharp focus, beautiful bokeh background, " +
-                "high-end photography style, 9:16 portrait orientation, " +
-                "engaging and visually stunning composition, " +
-                "no text no letters no words no watermark",
-                baseContext
+                "A beautiful photorealistic image showing: \"%s\". " +
+                "Clean professional lighting, rich vivid colors, sharp focus. " +
+                "High-end editorial photography style, visually engaging composition. " +
+                "Vertical 9:16 portrait orientation. " +
+                "No text, no letters, no words, no watermark, no UI elements.",
+                subject
         );
     }
 
     /**
-     * Sahne metni ve visualHint'ten görsel bağlamı çıkarır.
+     * Scene text ve visual hint'ten en iyi görsel açıklamayı seç.
      */
-    private String extractVisualContext(String sceneText, String visualHint) {
-        // visualHint varsa onu öncelikli kullan
-        if (visualHint != null && !visualHint.isBlank()) {
+    private String buildSubject(String sceneText, String visualHint) {
+        // visualHint detaylıysa (3+ kelime) onu kullan
+        if (visualHint != null && !visualHint.isBlank() && visualHint.split("\\s+").length >= 3) {
             return visualHint;
         }
 
-        // Text'ten anahtar kelimelere göre görsel bağlam üret
-        if (sceneText == null) return "abstract dark background";
-
-        String lower = sceneText.toLowerCase();
-
-        // Finans / para temaları
-        if (lower.contains("money") || lower.contains("rich") || lower.contains("wealth")) {
-            return "luxury gold coins and cash money on dark velvet surface";
-        }
-        if (lower.contains("invest") || lower.contains("stock") || lower.contains("market")) {
-            return "glowing stock market chart going up on dark screen";
-        }
-        if (lower.contains("save") || lower.contains("saving")) {
-            return "glass jar full of golden coins with growing plant";
-        }
-        if (lower.contains("debt") || lower.contains("liability")) {
-            return "broken credit card on dark surface dramatic lighting";
-        }
-        if (lower.contains("income") || lower.contains("stream")) {
-            return "multiple streams of water flowing into golden pool";
-        }
-        if (lower.contains("budget") || lower.contains("spend")) {
-            return "neat organized wallet with cash and calculator";
+        // Scene text'ten doğrudan görsel konsept üret
+        if (sceneText == null || sceneText.isBlank()) {
+            return "abstract luxury dark background with golden light rays";
         }
 
-        // Motivasyon temaları
-        if (lower.contains("start") || lower.contains("begin")) {
-            return "person standing at sunrise on mountain top silhouette";
-        }
-        if (lower.contains("follow") || lower.contains("crowd")) {
-            return "one person walking different path from crowd silhouette";
-        }
-        if (lower.contains("rule") || lower.contains("law")) {
-            return "elegant golden rules text carved on dark marble";
-        }
-        if (lower.contains("wait") || lower.contains("hesitat")) {
-            return "person standing at crossroads with dramatic fog";
+        // Temizle — emojiler, özel karakterler kaldır
+        String clean = sceneText
+                .replaceAll("[^a-zA-Z0-9\\s.,!?'-]", "")
+                .trim();
+
+        // Kısa text ise doğrudan kullan
+        if (clean.length() < 80) {
+            return clean;
         }
 
-        // Teknoloji temaları
-        if (lower.contains("ai") || lower.contains("tech") || lower.contains("robot")) {
-            return "futuristic AI robot with glowing blue circuits";
-        }
-        if (lower.contains("future") || lower.contains("innovat")) {
-            return "futuristic city skyline at night with neon lights";
+        // Uzun text ise ilk cümleyi al
+        int dotIdx = clean.indexOf('.');
+        if (dotIdx > 10 && dotIdx < 80) {
+            return clean.substring(0, dotIdx);
         }
 
-        // Genel
-        if (lower.contains("comment") || lower.contains("follow") || lower.contains("subscribe")) {
-            return "glowing social media engagement icons floating in dark space";
-        }
-
-        // Fallback
-        return "abstract dark cinematic background with bokeh lights";
+        return clean.substring(0, Math.min(80, clean.length()));
     }
 }
