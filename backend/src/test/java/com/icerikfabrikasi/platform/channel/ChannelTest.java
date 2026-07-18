@@ -215,7 +215,7 @@ class ChannelTest {
         @Test
         @DisplayName("TextAnimationStyle tüm değerler mevcut")
         void animationStyles() {
-            assertThat(TextAnimationStyle.values()).hasSize(6);
+            assertThat(TextAnimationStyle.values()).hasSize(7);
         }
 
         @Test

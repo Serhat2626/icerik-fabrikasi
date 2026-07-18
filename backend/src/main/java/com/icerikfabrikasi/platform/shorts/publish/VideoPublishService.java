@@ -32,6 +32,7 @@ public class VideoPublishService {
     private final ShortsScriptService scriptService;
     private final ChannelService channelService;
     private final YouTubeUploadGateway youTubeUploadGateway;
+    private final VideoDescriptionBuilder descriptionBuilder;
 
     /**
      * Tek bir render edilmiş video'yu YouTube'a yükler.
@@ -63,7 +64,7 @@ public class VideoPublishService {
         YouTubeUploadRequest uploadRequest = YouTubeUploadRequest.builder()
                 .videoFilePath(script.getRenderOutputPath())
                 .title(script.getTitle())
-                .description(buildDescription(script, channel))
+                .description(descriptionBuilder.buildDescription(script, channel))
                 .tags(tags)
                 .categoryId("22") // People & Blogs
                 .privacyStatus("public")
@@ -119,6 +120,11 @@ public class VideoPublishService {
                 .build();
     }
 
+    /**
+     * @deprecated Replaced by {@link VideoDescriptionBuilder#buildDescription}.
+     * Kept as fallback.
+     */
+    @Deprecated
     private String buildDescription(ShortsScript script, Channel channel) {
         StringBuilder desc = new StringBuilder();
         desc.append(script.getHook()).append("\n\n");

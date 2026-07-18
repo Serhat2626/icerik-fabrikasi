@@ -45,6 +45,28 @@ public class AiScenePromptBuilder {
     }
 
     /**
+     * Sahne için AI görsel prompt'u oluşturur — kanal bazlı stil preset'i ile.
+     *
+     * @param sceneText Sahne metni
+     * @param visualHint Görsel ipucu
+     * @param isHook Hook sahnesi mi
+     * @param imageStylePreset Kanal bazlı görsel stil preset'i
+     */
+    public String buildPrompt(String sceneText, String visualHint, boolean isHook, String imageStylePreset) {
+        String basePrompt = buildPrompt(sceneText, visualHint, isHook);
+        if (imageStylePreset != null && !imageStylePreset.isBlank()) {
+            String noTextDirective = "No text, no letters, no words, no watermark, no UI elements.";
+            if (basePrompt.contains(noTextDirective)) {
+                basePrompt = basePrompt.replace(noTextDirective,
+                        "Style: " + imageStylePreset + ". " + noTextDirective);
+            } else {
+                basePrompt += " Style: " + imageStylePreset + ".";
+            }
+        }
+        return basePrompt;
+    }
+
+    /**
      * Scene text ve visual hint'ten en iyi görsel açıklamayı seç.
      */
     private String buildSubject(String sceneText, String visualHint) {

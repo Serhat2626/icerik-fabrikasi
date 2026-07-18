@@ -31,11 +31,11 @@ public class ChannelVisualIdentity {
 
     /** Hook text boyutu (px) */
     @Builder.Default
-    int hookFontSize = 72;
+    int hookFontSize = 96;
 
     /** Gövde text boyutu (px) */
     @Builder.Default
-    int bodyFontSize = 48;
+    int bodyFontSize = 72;
 
     /** Text overlay animasyon stili */
     @Builder.Default

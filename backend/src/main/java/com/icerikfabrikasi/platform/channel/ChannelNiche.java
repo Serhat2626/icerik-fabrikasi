@@ -15,7 +15,25 @@ public enum ChannelNiche {
     QUIZ_TRIVIA("Quiz & Trivia", "General knowledge quiz, trivia challenges"),
 
     /** AI araç tanıtımı, teknoloji haberleri */
-    AI_TECH("AI & Tech", "AI tools, tech news, future technology");
+    AI_TECH("AI & Tech", "AI tools, tech news, future technology"),
+
+    /** Psikoloji, insan davranışları, beyin bilimi */
+    PSYCHOLOGY("Psychology", "Psychology, human behavior, brain science, cognitive biases"),
+
+    /** Şaşırtıcı bilgiler, biliyor muydunuz içerikleri */
+    FACTS_TRIVIA("Facts & Trivia", "Shocking facts, amazing knowledge, did-you-know content"),
+
+    /** Hızlı tarifler, mutfak ipuçları */
+    COOKING("Cooking", "Quick recipes, kitchen hacks, food content"),
+
+    /** Şirket hikayeleri, iş dünyası belgeselleri */
+    BUSINESS_DOCUMENTARY("Business Documentary", "Company stories, business history, entrepreneur profiles"),
+
+    /** Siber güvenlik, dijital gizlilik */
+    CYBERSECURITY("Cybersecurity", "Cyber security, hacking, digital privacy, VPN"),
+
+    /** No-code araçlar, otomasyon, AI agent'lar */
+    NOCODE_AUTOMATION("No-Code & Automation", "No-code tools, workflow automation, AI agents");
 
     private final String displayName;
     private final String description;

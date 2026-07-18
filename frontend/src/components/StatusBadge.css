@@ -1,0 +1,65 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: box-shadow var(--transition-fast);
+}
+
+.status-badge.status-sm {
+  padding: 2px 8px;
+  font-size: 0.6rem;
+  gap: 4px;
+}
+
+.status-indicator {
+  font-size: 0.6em;
+  line-height: 1;
+}
+
+/* Active — green */
+.status-active {
+  color: var(--color-success);
+  background: rgba(var(--color-success-rgb), 0.1);
+  border: 1px solid rgba(var(--color-success-rgb), 0.25);
+}
+
+.status-active .status-indicator {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Paused — amber */
+.status-paused {
+  color: var(--color-warning);
+  background: rgba(var(--color-warning-rgb), 0.1);
+  border: 1px solid rgba(var(--color-warning-rgb), 0.25);
+}
+
+/* Setup — blue */
+.status-setup {
+  color: var(--accent-primary);
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+}
+
+.status-setup .status-indicator {
+  animation: spin 2s linear infinite;
+}
+
+/* Archived — gray */
+.status-archived {
+  color: var(--text-tertiary);
+  background: rgba(107, 107, 130, 0.1);
+  border: 1px solid rgba(107, 107, 130, 0.2);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

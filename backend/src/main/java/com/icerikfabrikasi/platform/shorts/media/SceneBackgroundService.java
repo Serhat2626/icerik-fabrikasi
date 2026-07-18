@@ -65,10 +65,38 @@ public class SceneBackgroundService {
     }
 
     /**
+     * Kanal bazlı stil preset'i ile sahne arka planı çözer.
+     */
+    public Path resolveBackground(String visualHint, String sceneText, int sceneIndex, boolean isHook, String imageStylePreset) {
+        Path aiImage = tryAiGeneration(sceneText, visualHint, sceneIndex, isHook, imageStylePreset);
+        if (aiImage != null) return aiImage;
+
+        Path stockImage = tryStockPhoto(visualHint);
+        if (stockImage != null) return stockImage;
+
+        log.info("Görsel bulunamadı — düz renk arka plan kullanılacak: scene={}", sceneIndex);
+        return null;
+    }
+
+    /**
      * Eski API uyumluluğu — sadece visualHint ile çağrılınca Pexels dener.
      */
     public Path resolveBackground(String visualHint) {
         return tryStockPhoto(visualHint);
+    }
+
+    private Path tryAiGeneration(String sceneText, String visualHint, int sceneIndex, boolean isHook, String imageStylePreset) {
+        if (falAiGateway == null) return null;
+        try {
+            String prompt = (imageStylePreset != null && !imageStylePreset.isBlank())
+                    ? promptBuilder.buildPrompt(sceneText, visualHint, isHook, imageStylePreset)
+                    : promptBuilder.buildPrompt(sceneText, visualHint, isHook);
+            return falAiGateway.generateImage(prompt, sceneIndex);
+        } catch (Exception e) {
+            log.warn("AI görsel üretimi başarısız (preset), Pexels'e geçiliyor: scene={}, hata={}",
+                    sceneIndex, e.getMessage());
+            return null;
+        }
     }
 
     private Path tryAiGeneration(String sceneText, String visualHint, int sceneIndex, boolean isHook) {

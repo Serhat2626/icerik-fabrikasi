@@ -115,6 +115,65 @@ public class ElevenLabsTtsGateway {
     }
 
     /**
+     * Kanal bazlı ses parametreleri ile seslendirme yapar.
+     *
+     * @param text Seslendirilecek metin
+     * @param sceneIndex Sahne numarası
+     * @param voiceId Voice ID (null ise varsayılan)
+     * @param model Model (null ise varsayılan)
+     * @param stability Stability (null ise varsayılan 0.5)
+     * @param similarityBoost Similarity boost (null ise varsayılan 0.75)
+     * @param style Style (null ise varsayılan 0.3)
+     */
+    public Path synthesize(String text, int sceneIndex,
+                           String voiceId, String model,
+                           Double stability, Double similarityBoost, Double style) throws IOException {
+        String effectiveVoiceId = voiceId != null ? voiceId : defaultVoiceId;
+        String effectiveModel = model != null ? model : defaultModel;
+        double effectiveStability = stability != null ? stability : 0.5;
+        double effectiveSimilarity = similarityBoost != null ? similarityBoost : 0.75;
+        double effectiveStyle = style != null ? style : 0.3;
+
+        log.info("TTS istek (kanal profili): scene={}, text='{}...', voice={}, model={}",
+                sceneIndex, text.substring(0, Math.min(40, text.length())),
+                effectiveVoiceId, effectiveModel);
+
+        try {
+            byte[] audioBytes = restClient.post()
+                    .uri("/text-to-speech/{voiceId}", effectiveVoiceId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "text", text,
+                            "model_id", effectiveModel,
+                            "voice_settings", Map.of(
+                                    "stability", effectiveStability,
+                                    "similarity_boost", effectiveSimilarity,
+                                    "style", effectiveStyle
+                            )
+                    ))
+                    .retrieve()
+                    .body(byte[].class);
+
+            if (audioBytes == null || audioBytes.length == 0) {
+                throw new IOException("ElevenLabs boş yanıt döndü");
+            }
+
+            Path voiceDir = Path.of(cacheDir, "voiceover");
+            Files.createDirectories(voiceDir);
+            Path outputFile = voiceDir.resolve(
+                    String.format("scene_%03d_%s.mp3", sceneIndex, UUID.randomUUID().toString().substring(0, 8)));
+            Files.write(outputFile, audioBytes);
+
+            log.info("TTS başarılı (kanal profili): scene={}, size={}KB",
+                    sceneIndex, audioBytes.length / 1024);
+            return outputFile;
+        } catch (Exception e) {
+            log.error("TTS hatası: scene={}, hata={}", sceneIndex, e.getMessage());
+            throw new IOException("ElevenLabs TTS hatası: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Kalan kredi miktarını sorgular.
      */
     public SubscriptionInfo getSubscriptionInfo() {

@@ -104,6 +104,7 @@ public class SecurityConfig {
         config.setAllowedOrigins(List.of(
                 "http://localhost:5173",  // Vite dev server
                 "http://localhost:5174",  // Staging admin web
+                "http://localhost:5175",  // İçerik Fabrikası frontend
                 "http://localhost:3000"   // Alternatif dev server
         ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));

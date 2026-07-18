@@ -56,4 +56,36 @@ public class VoiceoverService {
 
         return voicePaths;
     }
+
+    /**
+     * Kanal bazlı ses profili ile seslendirme üretir.
+     */
+    public List<Path> generateVoiceovers(List<String> sceneTexts,
+                                          String voiceId, String voiceModel,
+                                          Double stability, Double similarityBoost, Double style) {
+        log.info("Seslendirme başlıyor (kanal profili): {} sahne, voice={}",
+                sceneTexts.size(), voiceId != null ? voiceId : "default");
+
+        List<Path> voicePaths = new ArrayList<>();
+
+        for (int i = 0; i < sceneTexts.size(); i++) {
+            String text = sceneTexts.get(i);
+            if (text == null || text.isBlank()) {
+                voicePaths.add(null);
+                continue;
+            }
+            try {
+                Path mp3Path = ttsGateway.synthesize(text, i, voiceId, voiceModel,
+                        stability, similarityBoost, style);
+                voicePaths.add(mp3Path);
+            } catch (IOException e) {
+                log.warn("Sahne {} seslendirme başarısız, atlanıyor: {}", i, e.getMessage());
+                voicePaths.add(null);
+            }
+        }
+
+        long successCount = voicePaths.stream().filter(p -> p != null).count();
+        log.info("Seslendirme tamamlandı: {}/{} sahne başarılı", successCount, sceneTexts.size());
+        return voicePaths;
+    }
 }

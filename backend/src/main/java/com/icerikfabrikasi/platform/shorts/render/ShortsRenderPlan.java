@@ -40,11 +40,11 @@ public class ShortsRenderPlan {
 
     /** Hook font boyutu */
     @Builder.Default
-    int hookFontSize = 72;
+    int hookFontSize = 96;
 
     /** Gövde font boyutu */
     @Builder.Default
-    int bodyFontSize = 48;
+    int bodyFontSize = 72;
 
     /** Watermark metni */
     String watermarkText;
@@ -55,6 +55,22 @@ public class ShortsRenderPlan {
     /** Müzik ses seviyesi (0.0 - 1.0) */
     @Builder.Default
     double musicVolume = 0.15;
+
+    /** Sahne geçiş türü */
+    @Builder.Default
+    TransitionType transitionType = TransitionType.DISSOLVE;
+
+    /** Geçiş süresi (saniye) */
+    @Builder.Default
+    double transitionDuration = 0.5;
+
+    /** Ken Burns efekti aktif mi */
+    @Builder.Default
+    boolean kenBurnsEnabled = true;
+
+    /** Ken Burns zoom yüzdesi (1.0 = %0, 1.06 = %6 zoom) */
+    @Builder.Default
+    double kenBurnsZoom = 1.06;
 
     /** Sahneler — sıralı render talimatları */
     List<SceneRenderPlan> scenes;

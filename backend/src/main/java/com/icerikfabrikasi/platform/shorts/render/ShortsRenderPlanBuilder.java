@@ -9,6 +9,7 @@ import com.icerikfabrikasi.platform.shorts.media.SceneBackgroundService;
 import com.icerikfabrikasi.platform.shorts.media.VoiceoverService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.icerikfabrikasi.platform.shorts.render.TransitionType;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -48,15 +49,19 @@ public class ShortsRenderPlanBuilder {
         }
 
         // 2. Seslendirme üret (ElevenLabs TTS)
-        List<Path> voicePaths = voiceoverService.generateVoiceovers(allTexts);
+        List<Path> voicePaths = voiceoverService.generateVoiceovers(
+                allTexts,
+                channel.getVoiceId(), channel.getVoiceModel(),
+                channel.getVoiceStability(), channel.getVoiceSimilarityBoost(), channel.getVoiceStyle());
 
         // 3. Sahne render planları oluştur
         List<ShortsRenderPlan.SceneRenderPlan> sceneRenderPlans = new ArrayList<>();
         int voiceIdx = 0;
 
         // Hook sahnesi
+        String imageStylePreset = channel.getImageStylePreset();
         Path hookBg = backgroundService.resolveBackground(
-                "dramatic dark background finance", script.getHook(), 0, true);
+                "dramatic dark background finance", script.getHook(), 0, true, imageStylePreset);
         Path hookVoice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
         int hookDuration = calculateDuration(hookVoice, 4);
 
@@ -74,7 +79,7 @@ public class ShortsRenderPlanBuilder {
 
         for (ShortsScriptScene scene : script.getScenes()) {
             Path bg = backgroundService.resolveBackground(
-                    scene.getVisualHint(), scene.getText(), sceneRenderPlans.size(), false);
+                    scene.getVisualHint(), scene.getText(), sceneRenderPlans.size(), false, imageStylePreset);
             Path voice = voiceIdx < voicePaths.size() ? voicePaths.get(voiceIdx++) : null;
             int duration = calculateDuration(voice, scene.getDurationSeconds());
 
@@ -135,6 +140,11 @@ public class ShortsRenderPlanBuilder {
                 .watermarkText(channel.getWatermarkText())
                 .backgroundMusicPath(musicPath)
                 .musicVolume(0.15)
+                .transitionType(channel.getTransitionType() != null ? channel.getTransitionType() : TransitionType.DISSOLVE)
+                .kenBurnsEnabled(true)
+                .kenBurnsZoom(1.06)
+                .hookFontSize(channel.getHookFontSize() > 0 ? channel.getHookFontSize() : 96)
+                .bodyFontSize(channel.getBodyFontSize() > 0 ? channel.getBodyFontSize() : 72)
                 .scenes(sceneRenderPlans)
                 .build();
 

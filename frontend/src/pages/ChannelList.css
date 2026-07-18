@@ -1,0 +1,106 @@
+.channel-list-page {
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+.channel-list__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: var(--space-lg);
+}
+
+/* ── Channel List Card ── */
+.channel-list-card {
+  position: relative;
+  padding: var(--space-lg);
+  cursor: pointer;
+  animation: slideUp var(--transition-slow) ease-out both;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  overflow: hidden;
+}
+
+.channel-list-card:hover {
+  border-color: var(--card-accent, var(--accent-primary));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 24px color-mix(in srgb, var(--card-accent, var(--accent-primary)) 12%, transparent);
+}
+
+.channel-list-card__accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--card-accent, var(--accent-primary));
+  opacity: 0.6;
+  transition: opacity var(--transition-fast);
+}
+
+.channel-list-card:hover .channel-list-card__accent {
+  opacity: 1;
+}
+
+.channel-list-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.channel-list-card__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  border: 1px solid;
+}
+
+.channel-list-card__name {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.channel-list-card__niche {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+
+.channel-list-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.channel-list-card__meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.meta-icon {
+  font-size: 0.85rem;
+}
+
+.channel-list-card__actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: auto;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .channel-list__grid {
+    grid-template-columns: 1fr;
+  }
+}
