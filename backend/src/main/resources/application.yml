@@ -54,14 +54,14 @@ jwt:
   expiration-ms: 86400000  # 24 saat
 
 pexels:
-  api-key: REDACTED_SECRET
+  api-key: ${PEXELS_API_KEY:}
 
 # ElevenLabs Text-to-Speech
 elevenlabs:
-  api-key: REDACTED_ELEVENLABS_API_KEY
+  api-key: ${ELEVENLABS_API_KEY:}
   voice-id: ${ELEVENLABS_VOICE_ID:TxGEqnHWrfWFTfGW9XjX}  # Josh - genç, enerjik, dinamik erkek
   model: eleven_multilingual_v2  # Daha kaliteli ses
 
 fal:
-  api-key: REDACTED_FAL_API_KEY
+  api-key: ${FAL_API_KEY:}
   model: fal-ai/flux-pro/v1.1
